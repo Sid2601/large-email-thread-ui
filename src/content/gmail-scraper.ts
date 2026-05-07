@@ -1,6 +1,11 @@
 import type { ThreadData, ParsedMessage, Participant, ExtensionMessage } from '../types';
 import { buildSender, stripQuotedText, debounce, generateId } from './scraper-utils';
 
+// Set to true only during local development — never ship with DEBUG = true
+// as log statements can expose partial URL fragments from location.hash.
+const DEBUG = false;
+const log = (...args: unknown[]) => { if (DEBUG) log('[ThreadLens]', ...args); };
+
 let lastThreadId = '';
 let lastMessageCount = 0;
 let expandAttempted = false;
@@ -25,8 +30,10 @@ function getThreadId(): string {
   // The thread/message ID is always the LAST slash-separated segment.
   const parts = location.hash.split('/');
   const last = parts[parts.length - 1];
-  // Only treat it as an ID if it's long enough to be one (not a keyword like "inbox")
-  return last && last.length > 8 ? last : `thread-${Date.now()}`;
+  // Alphanumeric-only and ≥9 chars distinguishes a real Gmail ID from
+  // keywords ("inbox"), label names, and search queries (which contain
+  // colons, dots, @-signs, spaces, etc.).
+  return last && /^[A-Za-z0-9]{9,}$/.test(last) ? last : `thread-${Date.now()}`;
 }
 
 function getSubject(): string {
@@ -68,7 +75,7 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     return true;
   });
 
-  console.log(`[ThreadLens] Found ${messageEls.length} message containers`);
+  log(`[ThreadLens] Found ${messageEls.length} message containers`);
 
   messageEls.forEach((el, index) => {
     // ── Sender ──────────────────────────────────────────────────────────────
@@ -95,13 +102,13 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     // .a3s matches both expanded (.a3s.aiL) and collapsed messages.
     const bodyEl = el.querySelector('.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]');
     if (!bodyEl) {
-      console.log(`[ThreadLens] Message ${index}: no body element found — collapsed or stub`);
+      log(`[ThreadLens] Message ${index}: no body element found — collapsed or stub`);
       return;
     }
 
     const { body, quotedText } = stripQuotedText(bodyEl);
     if (!body) {
-      console.log(`[ThreadLens] Message ${index}: body empty after quote stripping`);
+      log(`[ThreadLens] Message ${index}: body empty after quote stripping`);
       return;
     }
 
@@ -118,7 +125,7 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     });
   });
 
-  console.log(`[ThreadLens] Parsed ${messages.length} messages successfully`);
+  log(`[ThreadLens] Parsed ${messages.length} messages successfully`);
 
   // Sort oldest → newest so the latest message is always at the bottom
   return messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -138,7 +145,7 @@ function buildParticipants(messages: ParsedMessage[]): Participant[] {
 
 function scrapeAndSend(): void {
   const threadId = getThreadId();
-  console.log(`[ThreadLens] scrapeAndSend — threadId: ${threadId}`);
+  log(`[ThreadLens] scrapeAndSend — threadId: ${threadId}`);
 
   // Reset expand flag when the user navigates to a different thread
   if (threadId !== lastThreadId) expandAttempted = false;
@@ -150,7 +157,7 @@ function scrapeAndSend(): void {
     // If tryExpandAll caused DOM changes, MutationObserver fires again and we
     // re-parse with the now-expanded messages. The setTimeout below is a
     // safety net for cases where expansion doesn't trigger MutationObserver.
-    setTimeout(scrapeAndSend, 800);
+    setTimeout(debouncedScrape, 800);
   }
 
   const currentUserEmail = getCurrentUserEmail();
@@ -170,7 +177,7 @@ function scrapeAndSend(): void {
     participants: buildParticipants(messages),
   };
 
-  console.log(`[ThreadLens] Sending ${messages.length} messages to Side Panel`);
+  log(`[ThreadLens] Sending ${messages.length} messages to Side Panel`);
 
   chrome.runtime.sendMessage({ type: 'THREAD_PARSED', data: threadData } satisfies ExtensionMessage)
     .catch(() => {});
@@ -182,5 +189,5 @@ const observeTarget = document.querySelector('[role="main"]') ?? document.body;
 const observer = new MutationObserver(debouncedScrape);
 observer.observe(observeTarget, { childList: true, subtree: true });
 
-console.log('[ThreadLens] Content script loaded — watching for email threads');
+log('[ThreadLens] Content script loaded — watching for email threads');
 debouncedScrape();
