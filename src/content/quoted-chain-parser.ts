@@ -63,7 +63,7 @@ function extractSender(attrEl: Element): { name: string; email: string } {
     return { name, email };
   }
 
-  return { name: 'Unknown', email: `unknown-d${Date.now()}@unknown` };
+  return { name: 'Unknown', email: 'unknown@unknown' };
 }
 
 /**
