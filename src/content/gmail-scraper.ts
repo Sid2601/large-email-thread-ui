@@ -77,6 +77,11 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
   log(`Found ${messageEls.length} message containers`);
 
   messageEls.forEach((el, index) => {
+    // Use Gmail's own data-message-id directly as the stable ParsedMessage ID.
+    // This is assigned by Gmail's server and is globally unique — eliminates the
+    // same-sender/same-second collision risk that a derived hash cannot avoid.
+    const domMessageId = el.getAttribute('data-message-id') ?? generateId(`fallback-${index}`, new Date().toISOString());
+
     const senderEl = el.querySelector<HTMLElement>('.gD, [email]');
     const senderName = senderEl?.getAttribute('name') ?? senderEl?.textContent?.trim() ?? 'Unknown';
     let senderEmail = senderEl?.getAttribute('email') ?? '';
@@ -102,8 +107,7 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     if (!body) return;
 
     messages.push({
-      // Stable ID: email + timestamp only — no DOM index that can shift during load
-      id: generateId(senderEmail, timestamp),
+      id: domMessageId,
       sender: buildSender(senderName, senderEmail),
       timestamp,
       body,
@@ -129,7 +133,9 @@ function scheduleRetry(): void {
   if (retryIndex >= RETRY_DELAYS.length) return;
   const delay = RETRY_DELAYS[retryIndex++];
   log(`Scheduling retry in ${delay}ms (attempt ${retryIndex})`);
-  retryTimer = setTimeout(scrapeAndSend, delay);
+  // Null retryTimer before calling scrapeAndSend so any future
+  // `if (retryTimer !== null)` guard sees a clean state.
+  retryTimer = setTimeout(() => { retryTimer = null; scrapeAndSend(); }, delay);
 }
 
 function onThreadChanged(newThreadId: string): void {
