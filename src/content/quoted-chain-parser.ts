@@ -36,8 +36,7 @@ import { buildSender, htmlToText, generateId } from './scraper-utils';
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function isQuoteBlock(el: Element): boolean {
-  return el.tagName === 'BLOCKQUOTE' && el.classList.contains('gmail_quote')
-    || el.classList.contains('gmail_quote');
+  return el.classList.contains('gmail_quote');
 }
 
 function isAttrBlock(el: Element): boolean {
@@ -168,8 +167,17 @@ export function parseQuotedChain(
       sibling = sibling.nextElementSibling;
     }
 
-    // No associated quote found (attr is decorative or mis-structured)
-    if (!sibling || isAttrBlock(sibling)) return;
+    // Standard Gmail always places the blockquote AFTER the .gmail_attr.
+    // Forwarded messages sometimes place it BEFORE — check one sibling back
+    // as a fallback before giving up.
+    if (!sibling || isAttrBlock(sibling)) {
+      const prevSibling = attr.previousElementSibling;
+      if (prevSibling && isQuoteBlock(prevSibling)) {
+        sibling = prevSibling;
+      } else {
+        return; // no paired blockquote found in either direction
+      }
+    }
 
     const { name, email } = extractSender(attr);
     const timestamp = extractTimestamp(attr, depth);
@@ -194,5 +202,8 @@ export function parseQuotedChain(
   });
 
   // DOM order is [most-recently-quoted → oldest]; reverse for chat display
-  return messages.reverse();
+  messages.reverse();
+  // Re-assign index values now that order is chronological (oldest=0 … newest=n-1)
+  messages.forEach((m, i) => { m.index = -(messages.length - i); });
+  return messages;
 }
