@@ -37,10 +37,45 @@ export function stripHtml(html: string): string {
 
 export function stripQuotedText(bodyEl: Element): { body: string; quotedText: string | undefined } {
   const clone = bodyEl.cloneNode(true) as Element;
-  const quoted = clone.querySelector('blockquote, .gmail_quote, [class*="quote"]');
-  const quotedText = quoted ? stripHtml(quoted.innerHTML) : undefined;
-  quoted?.remove();
-  return { body: stripHtml(clone.innerHTML), quotedText: quotedText || undefined };
+
+  // 1. Collect quoted content before removing it
+  const quotedParts: string[] = [];
+
+  // Gmail wraps quoted replies in blockquote.gmail_quote or .gmail_quote
+  clone.querySelectorAll<Element>('blockquote.gmail_quote, .gmail_quote').forEach(q => {
+    const text = stripHtml(q.innerHTML).trim();
+    if (text) quotedParts.push(text);
+    q.remove();
+  });
+
+  // Standard HTML blockquotes (Outlook-style replies pasted into Gmail)
+  clone.querySelectorAll<Element>('blockquote').forEach(q => {
+    const text = stripHtml(q.innerHTML).trim();
+    if (text) quotedParts.push(text);
+    q.remove();
+  });
+
+  // 2. Remove Gmail-specific chrome injected into .a3s
+  // Attribution line: "On Mon, Apr 6, 2026 at 2:57 PM Siddharth Shah wrote:"
+  clone.querySelectorAll<Element>('.gmail_attr').forEach(el => el.remove());
+
+  // "Hide quoted text" / "Show trimmed content" toggle button Gmail injects
+  clone.querySelectorAll<Element>('u.q, [class*="elided"], [class*="toggle"]').forEach(el => el.remove());
+
+  // Hidden content blocks Gmail uses for trimmed content (display:none divs)
+  clone.querySelectorAll<HTMLElement>('[style*="display:none"], [style*="display: none"]').forEach(el => el.remove());
+
+  // 3. Clean up the remaining body text
+  let body = stripHtml(clone.innerHTML);
+
+  // Remove leading/trailing "On ... wrote:" lines that weren't in a .gmail_attr element
+  body = body.replace(/^On .+? wrote:\s*/s, '').trim();
+
+  // Remove email signature separator lines
+  body = body.replace(/\n--\s*\n[\s\S]*$/, '').trim();
+
+  const quotedText = quotedParts.join('\n---\n').trim() || undefined;
+  return { body, quotedText };
 }
 
 export function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
