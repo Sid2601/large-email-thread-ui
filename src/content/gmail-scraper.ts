@@ -1,6 +1,7 @@
 import type { ParsedMessage, ExtensionMessage } from '../types';
 import { buildSender, stripQuotedText, debounce, generateId } from './scraper-utils';
 import { threadCache } from './thread-cache';
+import { parseQuotedChain } from './quoted-chain-parser';
 
 // Set to true only during local development — never commit as true.
 const DEBUG = false;
@@ -169,8 +170,28 @@ function scrapeAndSend(): void {
     setTimeout(debouncedScrape, 800);
   }
 
-  const incoming = parseMessages(getCurrentUserEmail());
-  log(`Parsed ${incoming.length} messages from DOM`);
+  const currentUserEmail = getCurrentUserEmail();
+
+  // Strategy A: parse [data-message-id] elements (all expanded messages)
+  const domMessages = parseMessages(currentUserEmail);
+  log(`Strategy A (DOM): ${domMessages.length} messages`);
+
+  // Strategy B: parse quoted chain from the latest email only.
+  // Only runs when Strategy A returned ≤1 message (i.e. expand-all hasn't settled
+  // yet or all older messages are collapsed). Strategy A uses Gmail's server-assigned
+  // data-message-id while Strategy B uses a hash — they never produce the same ID,
+  // so merging both on a fully-expanded thread would duplicate every message in the UI.
+  const latestBodyEl = domMessages.length <= 1
+    ? document.querySelector('.a3s.aiL')
+    : null;
+  const chainMessages = latestBodyEl
+    ? parseQuotedChain(latestBodyEl, currentUserEmail)
+    : [];
+  log(`Strategy B (quoted chain): ${chainMessages.length} messages (domMessages=${domMessages.length})`);
+
+  // When Strategy A has all messages, chainMessages is empty and we send domMessages.
+  // When Strategy A has ≤1, chainMessages fills in the thread history immediately.
+  const incoming: ParsedMessage[] = [...chainMessages, ...domMessages];
 
   if (incoming.length === 0) {
     scheduleRetry();
