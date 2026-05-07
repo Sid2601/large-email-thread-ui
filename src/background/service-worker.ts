@@ -8,10 +8,13 @@ chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, sender, sendResponse) => {
     if (message.type === 'THREAD_PARSED') {
       const data: ThreadData = message.data;
-      chrome.storage.local.set({ currentThread: data }, () => {
-        chrome.runtime.sendMessage({ type: 'THREAD_UPDATED', data } satisfies ExtensionMessage)
-          .catch(() => {}); // side panel may not be open yet
-      });
+      // Use Promise-based set so errors propagate; only broadcast on success.
+      chrome.storage.local.set({ currentThread: data })
+        .then(() => {
+          chrome.runtime.sendMessage({ type: 'THREAD_UPDATED', data } satisfies ExtensionMessage)
+            .catch(() => {}); // side panel may not be open yet — expected
+        })
+        .catch(() => {});
       if (sender.tab?.id) {
         chrome.sidePanel.open({ tabId: sender.tab.id });
       }
@@ -29,5 +32,8 @@ chrome.runtime.onMessage.addListener(
       });
       return true;
     }
+
+    // Unknown message type — return false to close the channel immediately.
+    return false;
   }
 );

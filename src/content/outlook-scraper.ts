@@ -4,6 +4,16 @@ import type { ExtensionMessage, ThreadData, ParsedMessage, Participant } from '.
 import { buildSender, stripHtml, debounce, generateId } from './scraper-utils';
 
 let lastThreadId = '';
+let lastMessageCount = 0;
+
+function parseTimestamp(raw: string): string {
+  try {
+    const parsed = new Date(raw);
+    return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
 
 function scrape(): void {
   // Outlook reading pane carries data-convid on the focused conversation
@@ -11,12 +21,16 @@ function scrape(): void {
   if (!pane) return;
 
   const threadId = pane.getAttribute('data-convid') ?? '';
-  if (!threadId || threadId === lastThreadId) return;
-  lastThreadId = threadId;
+  if (!threadId) return;
 
   // Minimal parse so the Side Panel shows something on Outlook too
   const itemEls = Array.from(pane.querySelectorAll<HTMLElement>('[role="option"]'));
   if (itemEls.length === 0) return;
+
+  // Short-circuit if nothing changed (same thread, same message count)
+  if (threadId === lastThreadId && itemEls.length === lastMessageCount) return;
+  lastThreadId = threadId;
+  lastMessageCount = itemEls.length;
 
   const messages: ParsedMessage[] = [];
   itemEls.forEach((el, index) => {
@@ -24,7 +38,7 @@ function scrape(): void {
     const senderName = nameEl?.getAttribute('title') ?? 'Unknown';
     const senderEmail = nameEl?.getAttribute('data-pe-id') ?? `outlook-${index}@unknown`;
     const timeEl = el.querySelector<HTMLElement>('time[datetime]');
-    const timestamp = timeEl?.getAttribute('datetime') ?? new Date().toISOString();
+    const timestamp = parseTimestamp(timeEl?.getAttribute('datetime') ?? '');
     const bodyEl = el.querySelector<HTMLElement>('[data-block]');
     const body = bodyEl ? stripHtml(bodyEl.innerHTML) : '';
     if (!body) return;
@@ -64,6 +78,13 @@ function scrape(): void {
 }
 
 const debouncedScrape = debounce(scrape, 400);
-const observer = new MutationObserver(debouncedScrape);
-observer.observe(document.body, { childList: true, subtree: true });
+
+// Observe only the reading pane once found; fall back to body if not yet mounted.
+function startObserver(): void {
+  const target = document.querySelector('[data-convid]')?.parentElement ?? document.body;
+  const observer = new MutationObserver(debouncedScrape);
+  observer.observe(target, { childList: true, subtree: true });
+}
+
+startObserver();
 debouncedScrape();
