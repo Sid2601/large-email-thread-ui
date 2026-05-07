@@ -4,7 +4,7 @@ import { buildSender, stripQuotedText, debounce, generateId } from './scraper-ut
 // Set to true only during local development — never ship with DEBUG = true
 // as log statements can expose partial URL fragments from location.hash.
 const DEBUG = false;
-const log = (...args: unknown[]) => { if (DEBUG) log('[ThreadLens]', ...args); };
+const log = (...args: unknown[]) => { if (DEBUG) console.log('[ThreadLens]', ...args); };
 
 let lastThreadId = '';
 let lastMessageCount = 0;
