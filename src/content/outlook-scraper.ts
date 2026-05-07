@@ -44,7 +44,7 @@ function scrape(): void {
     if (!body) return;
 
     messages.push({
-      id: generateId(senderEmail, timestamp, index),
+      id: generateId(senderEmail, timestamp),
       sender: buildSender(senderName, senderEmail),
       timestamp,
       body,
