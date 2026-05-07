@@ -64,8 +64,9 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
       timestamp = new Date().toISOString();
     }
 
-    // Body — Gmail expanded messages use .a3s.aiL or .a3s
-    const bodyEl = el.querySelector('.a3s.aiL, .a3s');
+    // .a3s.aiL and .a3s are obfuscated Gmail classes — they can change on redeploy.
+    // Broader fallback selectors below reduce breakage risk.
+    const bodyEl = el.querySelector('.a3s.aiL, .a3s, .ii.gt div, [data-message-text]');
     if (!bodyEl) return; // collapsed message — skip
 
     const { body, quotedText } = stripQuotedText(bodyEl);
@@ -125,7 +126,10 @@ function scrapeAndSend(): void {
 
 const debouncedScrape = debounce(scrapeAndSend, 350);
 
+// Observe the main content area, not the whole body, to avoid firing on
+// every sidebar mutation (chat widget, autocomplete, ads, etc.).
+const observeTarget = document.querySelector('[role="main"]') ?? document.body;
 const observer = new MutationObserver(debouncedScrape);
-observer.observe(document.body, { childList: true, subtree: true });
+observer.observe(observeTarget, { childList: true, subtree: true });
 
 debouncedScrape();

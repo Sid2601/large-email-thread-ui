@@ -21,8 +21,16 @@ export function useThreadData() {
     };
     chrome.runtime.onMessage.addListener(listener);
 
-    // Ask service worker for current thread (in case we opened late)
+    // Ask service worker for current thread (in case we opened late).
+    // Storage read on mount already covers the common case; this catches the
+    // race where the panel opens between scrape and storage write.
     chrome.runtime.sendMessage({ type: 'REQUEST_THREAD' } satisfies ExtensionMessage)
+      .then((response: ExtensionMessage | null) => {
+        if (response?.type === 'THREAD_UPDATED') {
+          setThreadData(response.data);
+          setIsLoading(false);
+        }
+      })
       .catch(() => {});
 
     return () => chrome.runtime.onMessage.removeListener(listener);
