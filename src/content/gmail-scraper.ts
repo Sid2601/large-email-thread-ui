@@ -177,17 +177,20 @@ function scrapeAndSend(): void {
   log(`Strategy A (DOM): ${domMessages.length} messages`);
 
   // Strategy B: parse quoted chain from the latest email only.
-  // Extracts full thread history from nested .gmail_attr + blockquote.gmail_quote
-  // inside the single always-expanded .a3s.aiL element.
-  // Works immediately without expand-all, in any Gmail locale.
-  const latestBodyEl = document.querySelector('.a3s.aiL');
+  // Only runs when Strategy A returned ≤1 message (i.e. expand-all hasn't settled
+  // yet or all older messages are collapsed). Strategy A uses Gmail's server-assigned
+  // data-message-id while Strategy B uses a hash — they never produce the same ID,
+  // so merging both on a fully-expanded thread would duplicate every message in the UI.
+  const latestBodyEl = domMessages.length <= 1
+    ? document.querySelector('.a3s.aiL')
+    : null;
   const chainMessages = latestBodyEl
     ? parseQuotedChain(latestBodyEl, currentUserEmail)
     : [];
-  log(`Strategy B (quoted chain): ${chainMessages.length} messages`);
+  log(`Strategy B (quoted chain): ${chainMessages.length} messages (domMessages=${domMessages.length})`);
 
-  // Merge both — ThreadCache deduplicates by message ID so overlap is harmless.
-  // Strategy A messages take precedence when IDs collide (they have richer DOM data).
+  // When Strategy A has all messages, chainMessages is empty and we send domMessages.
+  // When Strategy A has ≤1, chainMessages fills in the thread history immediately.
   const incoming: ParsedMessage[] = [...chainMessages, ...domMessages];
 
   if (incoming.length === 0) {

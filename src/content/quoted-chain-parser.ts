@@ -105,10 +105,14 @@ function walkQuotes(container: Element, depth: number, results: RawQuotedMessage
     const { name, email } = extractSenderFromAttr(wrapper);
     const timestamp = extractTimestampFromAttr(wrapper);
 
-    // Body = blockquote content minus its OWN nested quote and attribution
+    // Body = blockquote content minus its OWN nested quote and attribution.
+    // Use :scope on all selectors so only direct-child elements are removed,
+    // not deeper nested quotes that belong to older messages.
     const bodyClone = wrapperQuote.cloneNode(true) as Element;
-    bodyClone.querySelector('.gmail_attr')?.remove();
-    bodyClone.querySelector('blockquote.gmail_quote')?.remove();
+    bodyClone.querySelector(':scope > .gmail_attr')?.remove();
+    bodyClone.querySelector(':scope > blockquote.gmail_quote')?.remove();
+    bodyClone.querySelector(':scope > div > .gmail_attr')?.remove();
+    bodyClone.querySelector(':scope > div > blockquote.gmail_quote')?.remove();
 
     results.push({ name, email, timestamp, bodyHtml: bodyClone.innerHTML, depth });
     walkQuotes(wrapperQuote, depth + 1, results);
@@ -155,8 +159,10 @@ export function parseQuotedChain(
     const body = htmlToText(msg.bodyHtml);
     if (!body) return;
 
+    // Include depth as tiebreaker so two messages from the same sender that both
+    // fail timestamp parsing don't hash to the same ID and cause silent drops.
     result.push({
-      id: generateId(msg.email, msg.timestamp),
+      id: generateId(`${msg.email}-d${msg.depth}`, msg.timestamp),
       sender: buildSender(msg.name, msg.email),
       timestamp: msg.timestamp,
       body,
