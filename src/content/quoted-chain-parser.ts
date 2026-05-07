@@ -30,8 +30,7 @@ const OUTLOOK_SEP_RE =
   /^(?:From|De|Von|Van):\s+(.+?)(?:\n(?:Sent|Date|Envoyé|Gesendet|Verzonden):\s+(.+?))?(?:\n[^\n]+){0,3}\n(?:To|À|An|Aan):/m;
 
 // Legal disclaimer stripping — corporate emails repeat these verbatim
-const DISCLAIMER_RE =
-  /(?:this e-?mail and any attachments|this message contains information that is confidential|agreements binding|e-mail transmissions are not secure)/i;
+// DISCLAIMER_RE no longer needed — merged into normalizeBody's single strip regex
 
 // ── segment types ────────────────────────────────────────────────────────────
 
@@ -49,15 +48,15 @@ interface Segment {
 function normalizeBody(text: string): string {
   return text
     .toLowerCase()
-    // Collapse all whitespace including non-breaking spaces
-    .replace(/[ ​\t\r]+/g, ' ')
     .replace(/\s+/g, ' ')
-    // Strip legal disclaimers that appear verbatim in every email
-    .replace(DISCLAIMER_RE, (match, offset) => text.slice(offset, offset + match.length))
-    .replace(/this e-?mail[\s\S]{0,1500}$/i, '')
+    // Single regex strips all legal disclaimer variants from the point they appear.
+    // Covers: Wickes/Aptean/corporate boilerplate that repeats verbatim in every email.
+    .replace(
+      /(?:this e-?mail and any attachments|this message contains information that is confidential|agreements binding|e-mail transmissions are not secure)[\s\S]{0,3000}$/i,
+      ''
+    )
     .trim();
 }
-
 function hashBody(text: string): string {
   const normalized = normalizeBody(text);
   const sample = normalized.slice(0, 300);
@@ -296,11 +295,15 @@ export function parseQuotedChain(
   // 1. Gmail-quoted DOM chain (primary, locale-independent)
   parseGmailQuotes(latestBodyEl, 0, anchorTimestamp, segmentMap);
 
-  // 2. Text-based: scan the full body text for forward/Outlook patterns
-  //    This catches content inside forwarded sections that don't use .gmail_attr
-  const fullBodyText = htmlToText(latestBodyEl.innerHTML);
-  parseForwardSection(fullBodyText, segmentMap.size, anchorTimestamp, segmentMap);
-  parseOutlookChain(fullBodyText, segmentMap.size, anchorTimestamp, segmentMap);
+  // 2. Text-based: scan outer body text for forward/Outlook patterns.
+  //    Strip .gmail_quote children first to avoid re-scanning content already
+  //    processed by parseGmailQuotes (dedup Map prevents data duplication,
+  //    but the extra scan is wasteful on long threads).
+  const outerClone = latestBodyEl.cloneNode(true) as Element;
+  outerClone.querySelectorAll('.gmail_quote').forEach(el => el.remove());
+  const outerText = htmlToText(outerClone.innerHTML);
+  parseForwardSection(outerText, segmentMap.size, anchorTimestamp, segmentMap);
+  parseOutlookChain(outerText, segmentMap.size, anchorTimestamp, segmentMap);
 
   if (segmentMap.size === 0) return [];
 
