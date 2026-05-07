@@ -15,6 +15,11 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 let activeThreadId = '';
 let expandAttempted = false;
+// Tracks whether the current thread's cache was seeded by Strategy B
+// (quoted-chain IDs). When Strategy A later expands all messages and uses
+// Gmail's data-message-id values, the two ID systems never collide, so
+// we must evict the Strategy B entries to avoid duplicate bubbles.
+let usedStrategyB = false;
 
 function getCurrentUserEmail(): string {
   const accountEl = document.querySelector<HTMLElement>('[data-email]');
@@ -140,13 +145,13 @@ function scheduleRetry(): void {
 }
 
 function onThreadChanged(newThreadId: string): void {
-  // Evict the previous thread from cache only if navigating to a different thread
   if (activeThreadId && activeThreadId !== newThreadId) {
     threadCache.evict(activeThreadId);
   }
   activeThreadId = newThreadId;
   expandAttempted = false;
   retryIndex = 0;
+  usedStrategyB = false;
   clearRetryTimer();
 }
 
@@ -176,21 +181,39 @@ function scrapeAndSend(): void {
   const domMessages = parseMessages(currentUserEmail);
   log(`Strategy A (DOM): ${domMessages.length} messages`);
 
-  // Strategy B: parse quoted chain from the latest email only.
-  // Only runs when Strategy A returned ≤1 message (i.e. expand-all hasn't settled
-  // yet or all older messages are collapsed). Strategy A uses Gmail's server-assigned
-  // data-message-id while Strategy B uses a hash — they never produce the same ID,
-  // so merging both on a fully-expanded thread would duplicate every message in the UI.
+  // When Strategy A has found multiple messages AND the cache was previously
+  // seeded by Strategy B (different ID scheme), evict and rebuild cleanly.
+  // Without this, the same logical messages would appear with both IDs in the
+  // cache, causing duplicate bubbles in the Side Panel.
+  if (domMessages.length > 1 && usedStrategyB) {
+    log('Strategy A expanded — evicting Strategy B cache entries');
+    threadCache.evict(threadId);
+    usedStrategyB = false;
+  }
+
+  // Strategy B: quoted-chain DOM parser.
+  // Only runs when Strategy A has ≤1 message (expand-all hasn't settled yet).
+  // Passes threadId as ID seed (stable across calls) and the latest message's
+  // real timestamp as anchor (so estimated timestamps sort correctly).
   const latestBodyEl = domMessages.length <= 1
     ? document.querySelector('.a3s.aiL')
     : null;
-  const chainMessages = latestBodyEl
-    ? parseQuotedChain(latestBodyEl, currentUserEmail)
-    : [];
-  log(`Strategy B (quoted chain): ${chainMessages.length} messages (domMessages=${domMessages.length})`);
 
-  // When Strategy A has all messages, chainMessages is empty and we send domMessages.
-  // When Strategy A has ≤1, chainMessages fills in the thread history immediately.
+  // Anchor: latest DOM message's real timestamp. Used by quoted-chain parser
+  // to estimate timestamps for older quoted messages relative to the latest.
+  const anchorTimestamp = domMessages.length > 0
+    ? domMessages.reduce((latest, m) =>
+        new Date(m.timestamp) > new Date(latest.timestamp) ? m : latest
+      ).timestamp
+    : new Date().toISOString();
+
+  const chainMessages = latestBodyEl
+    ? parseQuotedChain(latestBodyEl, currentUserEmail, threadId, anchorTimestamp)
+    : [];
+  log(`Strategy B (quoted chain): ${chainMessages.length} messages`);
+
+  if (chainMessages.length > 0) usedStrategyB = true;
+
   const incoming: ParsedMessage[] = [...chainMessages, ...domMessages];
 
   if (incoming.length === 0) {
