@@ -19,6 +19,7 @@ export default function App() {
             {threadData.messages.length} messages
           </span>
         )}
+        <span className="text-xs text-gray-300 ml-auto shrink-0">v{__APP_VERSION__}</span>
       </div>
 
       {isLoading ? (
