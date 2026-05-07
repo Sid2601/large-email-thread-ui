@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "ThreadLens",
+  "version": "1.0.0",
+  "description": "Transform long email threads into a WhatsApp-style chat view — free, private, no login.",
+  "permissions": ["activeTab", "storage", "sidePanel"],
+  "side_panel": {
+    "default_path": "src/side-panel/index.html"
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://mail.google.com/*"],
+      "js": ["src/content/gmail-scraper.ts"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://outlook.live.com/*", "https://outlook.office.com/*"],
+      "js": ["src/content/outlook-scraper.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Open ThreadLens",
+    "default_icon": {
+      "16": "public/icons/icon16.png",
+      "48": "public/icons/icon48.png",
+      "128": "public/icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "public/icons/icon16.png",
+    "48": "public/icons/icon48.png",
+    "128": "public/icons/icon128.png"
+  }
+}
