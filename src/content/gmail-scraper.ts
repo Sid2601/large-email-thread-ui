@@ -18,8 +18,15 @@ function getCurrentUserEmail(): string {
 }
 
 function getThreadId(): string {
-  const match = location.href.match(/#[^/]+\/([a-f0-9]+)$/i);
-  return match?.[1] ?? `thread-${Date.now()}`;
+  // Gmail URL hash formats:
+  //   Inbox:  #inbox/18e1234567890abc
+  //   Search: #search/gym/KtbxLvHcHtqRLdDVGPXKWRLTwVsXTzjxNq
+  //   Label:  #label/Work/18e1234567890abc
+  // The thread/message ID is always the LAST slash-separated segment.
+  const parts = location.hash.split('/');
+  const last = parts[parts.length - 1];
+  // Only treat it as an ID if it's long enough to be one (not a keyword like "inbox")
+  return last && last.length > 8 ? last : `thread-${Date.now()}`;
 }
 
 function getSubject(): string {
@@ -27,9 +34,9 @@ function getSubject(): string {
     ?.textContent?.trim() ?? 'Email Thread';
 }
 
-// Clicks Gmail's expand-all button so all message bodies are in the DOM.
-// Uses only stable, non-action selectors (.gE / .go are Gmail's header row classes)
-// to avoid accidentally triggering Reply / Forward / More-options buttons.
+// Triggers Gmail's expand-all so collapsed messages become available in the DOM.
+// Only targets stable header-row classes (.gE / .go) — never [role="button"]
+// which would risk clicking Reply / Forward / More-options controls.
 function tryExpandAll(): void {
   const expandBtn = document.querySelector<HTMLElement>(
     '[data-tooltip="Expand all"], [aria-label="Expand all"], button[title="Expand all"]'
@@ -39,9 +46,6 @@ function tryExpandAll(): void {
     return;
   }
 
-  // Click individual collapsed message header rows.
-  // Only target .gE (sender row) or .go (collapsed header), never [role="button"]
-  // which is too broad and would match Reply / Forward / More-options controls.
   document.querySelectorAll<HTMLElement>('[data-message-id]').forEach(container => {
     if (!container.querySelector('.a3s')) {
       (container.querySelector<HTMLElement>('.gE') ??
@@ -63,6 +67,8 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     seen.add(id);
     return true;
   });
+
+  console.log(`[ThreadLens] Found ${messageEls.length} message containers`);
 
   messageEls.forEach((el, index) => {
     // ── Sender ──────────────────────────────────────────────────────────────
@@ -86,13 +92,18 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     }
 
     // ── Body ─────────────────────────────────────────────────────────────────
-    // .a3s matches both expanded (.a3s.aiL) and collapsed (.a3s without .aiL),
-    // so all messages in the thread are parsed, not just the latest open one.
+    // .a3s matches both expanded (.a3s.aiL) and collapsed messages.
     const bodyEl = el.querySelector('.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]');
-    if (!bodyEl) return;
+    if (!bodyEl) {
+      console.log(`[ThreadLens] Message ${index}: no body element found — collapsed or stub`);
+      return;
+    }
 
     const { body, quotedText } = stripQuotedText(bodyEl);
-    if (!body) return;
+    if (!body) {
+      console.log(`[ThreadLens] Message ${index}: body empty after quote stripping`);
+      return;
+    }
 
     messages.push({
       id: generateId(senderEmail, timestamp, index),
@@ -107,7 +118,9 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     });
   });
 
-  // Sort oldest → newest — latest message always appears at the bottom of the chat
+  console.log(`[ThreadLens] Parsed ${messages.length} messages successfully`);
+
+  // Sort oldest → newest so the latest message is always at the bottom
   return messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 }
 
@@ -125,17 +138,19 @@ function buildParticipants(messages: ParsedMessage[]): Participant[] {
 
 function scrapeAndSend(): void {
   const threadId = getThreadId();
+  console.log(`[ThreadLens] scrapeAndSend — threadId: ${threadId}`);
 
   // Reset expand flag when the user navigates to a different thread
   if (threadId !== lastThreadId) expandAttempted = false;
 
-  // On first visit to a thread, trigger expand-all so collapsed messages
-  // become available. The resulting DOM mutations re-fire this function via
-  // the MutationObserver, at which point expandAttempted is true and we parse.
   if (!expandAttempted) {
     expandAttempted = true;
     tryExpandAll();
-    return;
+    // Do NOT return — parse immediately with whatever is already in the DOM.
+    // If tryExpandAll caused DOM changes, MutationObserver fires again and we
+    // re-parse with the now-expanded messages. The setTimeout below is a
+    // safety net for cases where expansion doesn't trigger MutationObserver.
+    setTimeout(scrapeAndSend, 800);
   }
 
   const currentUserEmail = getCurrentUserEmail();
@@ -155,6 +170,8 @@ function scrapeAndSend(): void {
     participants: buildParticipants(messages),
   };
 
+  console.log(`[ThreadLens] Sending ${messages.length} messages to Side Panel`);
+
   chrome.runtime.sendMessage({ type: 'THREAD_PARSED', data: threadData } satisfies ExtensionMessage)
     .catch(() => {});
 }
@@ -165,4 +182,5 @@ const observeTarget = document.querySelector('[role="main"]') ?? document.body;
 const observer = new MutationObserver(debouncedScrape);
 observer.observe(observeTarget, { childList: true, subtree: true });
 
+console.log('[ThreadLens] Content script loaded — watching for email threads');
 debouncedScrape();
