@@ -27,27 +27,26 @@ function getSubject(): string {
     ?.textContent?.trim() ?? 'Email Thread';
 }
 
-// Clicks Gmail's "Expand all" button so every message body is in the DOM.
+// Clicks Gmail's expand-all button so all message bodies are in the DOM.
+// Uses only stable, non-action selectors (.gE / .go are Gmail's header row classes)
+// to avoid accidentally triggering Reply / Forward / More-options buttons.
 function tryExpandAll(): void {
-  // Gmail's expand-all button has various attribute forms depending on version
   const expandBtn = document.querySelector<HTMLElement>(
-    '[data-tooltip="Expand all"], [aria-label="Expand all"], [data-action-type="expand_all"], ' +
-    'button[title="Expand all"]'
+    '[data-tooltip="Expand all"], [aria-label="Expand all"], button[title="Expand all"]'
   );
   if (expandBtn) {
     expandBtn.click();
     return;
   }
 
-  // Fallback: click individual collapsed message headers.
-  // Collapsed messages lack a visible .a3s body — their container has [data-message-id]
-  // but the inner content wrapper (.adn) does NOT have the .ads class (ads = expanded).
+  // Click individual collapsed message header rows.
+  // Only target .gE (sender row) or .go (collapsed header), never [role="button"]
+  // which is too broad and would match Reply / Forward / More-options controls.
   document.querySelectorAll<HTMLElement>('[data-message-id]').forEach(container => {
-    const isExpanded = !!container.querySelector('.a3s');
-    if (!isExpanded) {
-      // The clickable header row is .gE (sender bar) or first [role="button"] descendant
-      const header = container.querySelector<HTMLElement>('.gE, .go, [role="button"]');
-      header?.click();
+    if (!container.querySelector('.a3s')) {
+      (container.querySelector<HTMLElement>('.gE') ??
+       container.querySelector<HTMLElement>('.go'))
+        ?.click();
     }
   });
 }
@@ -55,7 +54,6 @@ function tryExpandAll(): void {
 function parseMessages(currentUserEmail: string): ParsedMessage[] {
   const messages: ParsedMessage[] = [];
 
-  // Deduplicate by data-message-id
   const seen = new Set<string>();
   const messageEls = Array.from(
     document.querySelectorAll<HTMLElement>('[data-message-id]')
@@ -68,18 +66,15 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
 
   messageEls.forEach((el, index) => {
     // ── Sender ──────────────────────────────────────────────────────────────
-    // .gD is Gmail's sender span — carries name= and email= attributes
     const senderEl = el.querySelector<HTMLElement>('.gD, [email]');
     const senderName = senderEl?.getAttribute('name') ?? senderEl?.textContent?.trim() ?? 'Unknown';
     let senderEmail = senderEl?.getAttribute('email') ?? '';
-
     if (!senderEmail) {
       const mailto = el.querySelector<HTMLAnchorElement>('a[href^="mailto:"]');
       senderEmail = mailto?.href.replace('mailto:', '') ?? `sender-${index}@unknown`;
     }
 
     // ── Timestamp ────────────────────────────────────────────────────────────
-    // .g3 holds the relative time; its data-tooltip contains the full datetime string
     const timeEl = el.querySelector<HTMLElement>('.g3, [data-tooltip]');
     const rawTime = timeEl?.getAttribute('data-tooltip') ?? timeEl?.textContent?.trim() ?? '';
     let timestamp: string;
@@ -91,16 +86,13 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     }
 
     // ── Body ─────────────────────────────────────────────────────────────────
-    // .a3s exists in both expanded (.a3s.aiL) and collapsed (.a3s without .aiL) messages.
-    // Removing the .aiL requirement gives us all messages, not just the latest.
-    // Broader fallbacks cover Gmail DOM variations across versions.
-    const bodyEl = el.querySelector(
-      '.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]'
-    );
-    if (!bodyEl) return; // message is a stub with no body at all — skip
+    // .a3s matches both expanded (.a3s.aiL) and collapsed (.a3s without .aiL),
+    // so all messages in the thread are parsed, not just the latest open one.
+    const bodyEl = el.querySelector('.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]');
+    if (!bodyEl) return;
 
     const { body, quotedText } = stripQuotedText(bodyEl);
-    if (!body) return; // body was entirely quoted text — skip
+    if (!body) return;
 
     messages.push({
       id: generateId(senderEmail, timestamp, index),
@@ -115,7 +107,7 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     });
   });
 
-  // Sort oldest → newest so the chat reads top-to-bottom chronologically
+  // Sort oldest → newest — latest message always appears at the bottom of the chat
   return messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 }
 
@@ -133,26 +125,24 @@ function buildParticipants(messages: ParsedMessage[]): Participant[] {
 
 function scrapeAndSend(): void {
   const threadId = getThreadId();
-  const currentUserEmail = getCurrentUserEmail();
 
-  // On first detection of a new thread, trigger expand-all so collapsed
-  // messages become available for parsing. The resulting DOM mutations will
-  // re-fire this function via the MutationObserver, picking up all messages.
-  if (threadId !== lastThreadId) {
-    expandAttempted = false;
-  }
+  // Reset expand flag when the user navigates to a different thread
+  if (threadId !== lastThreadId) expandAttempted = false;
+
+  // On first visit to a thread, trigger expand-all so collapsed messages
+  // become available. The resulting DOM mutations re-fire this function via
+  // the MutationObserver, at which point expandAttempted is true and we parse.
   if (!expandAttempted) {
     expandAttempted = true;
     tryExpandAll();
-    // Let the DOM settle — MutationObserver fires again after expansion
     return;
   }
 
+  const currentUserEmail = getCurrentUserEmail();
   const messages = parseMessages(currentUserEmail);
   if (messages.length === 0) return;
-
-  // Short-circuit if nothing changed
   if (threadId === lastThreadId && messages.length === lastMessageCount) return;
+
   lastThreadId = threadId;
   lastMessageCount = messages.length;
 
@@ -171,7 +161,6 @@ function scrapeAndSend(): void {
 
 const debouncedScrape = debounce(scrapeAndSend, 350);
 
-// Observe only the main content area — avoids firing on Gmail sidebar mutations
 const observeTarget = document.querySelector('[role="main"]') ?? document.body;
 const observer = new MutationObserver(debouncedScrape);
 observer.observe(observeTarget, { childList: true, subtree: true });
