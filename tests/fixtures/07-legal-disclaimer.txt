@@ -1,0 +1,24 @@
+From: Bob Davis <bob@example.com>
+Sent: 2026-04-07 17:00:00
+To: Alice Smith <alice@example.com>
+Subject: Re: Deployment Status
+
+Hi Alice,
+
+The deployment is complete. All systems are green.
+
+Best,
+Bob
+
+This e-mail and any attachments may contain information that is proprietary and confidential. If you are not the intended recipient, please notify the sender immediately, delete this e-mail and do not disclose, copy, or distribute its contents to any third party. The views expressed in this e-mail are those of the sender and do not represent the official views of the company. Email transmissions are not secure and may be intercepted.
+
+From: Alice Smith <alice@example.com>
+Sent: 2026-04-07 14:00:00
+To: Bob Davis <bob@example.com>
+Subject: Re: Deployment Status
+
+Bob, please confirm once the deployment is done.
+
+Thanks
+
+This e-mail and any attachments may contain information that is proprietary and confidential. If you are not the intended recipient, please notify the sender immediately, delete this e-mail and do not disclose, copy, or distribute its contents to any third party.

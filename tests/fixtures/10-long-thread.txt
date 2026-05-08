@@ -1,0 +1,22 @@
+<div>
+  <div class="gmail_attr">On Fri, Apr 10, 2026 at 5:00 PM <a href="mailto:eve@example.com">Eve Wilson</a> wrote:</div>
+  <blockquote class="gmail_quote">
+    All resolved. Closing the thread. Thanks everyone!
+    <div class="gmail_attr">On Fri, Apr 10, 2026 at 2:30 PM <a href="mailto:dave@example.com">Dave Brown</a> wrote:</div>
+    <blockquote class="gmail_quote">
+      Confirmed — the fix is deployed to production and verified.
+      <div class="gmail_attr">On Fri, Apr 10, 2026 at 11:00 AM <a href="mailto:carol@example.com">Carol Jones</a> wrote:</div>
+      <blockquote class="gmail_quote">
+        Reproducing it now. Will push a fix within the hour.
+        <div class="gmail_attr">On Fri, Apr 10, 2026 at 9:45 AM <a href="mailto:bob@example.com">Bob Davis</a> wrote:</div>
+        <blockquote class="gmail_quote">
+          Alert triggered at 9:30 AM. P99 latency spiked to 8 seconds on the payments service.
+          <div class="gmail_attr">On Fri, Apr 10, 2026 at 9:00 AM <a href="mailto:alice@example.com">Alice Smith</a> wrote:</div>
+          <blockquote class="gmail_quote">
+            We are seeing elevated error rates. Can someone investigate?
+          </blockquote>
+        </blockquote>
+      </blockquote>
+    </blockquote>
+  </blockquote>
+</div>

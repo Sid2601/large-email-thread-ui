@@ -1,0 +1,1724 @@
+Hi Harj and Jon, 
+
+Hope you are well. We would like to clarify a few things that we observed in production. 
+
+1. CNDC movements - We see that SME_SUPPLIER_CODE and SME_STK_CONDITION_CODE are the same for 4 movements. As per our understanding, these codes should be different. They are different for other CNDC movements, but they are the same only for these four movements.2.  XFER movements: Our current implementation groups XFER movements and uses the lowest SME_INT_LINE_NO for a unique record. However, we have seen 6 records where, for the lowest SME_INT_LINE_NO, SME_FROM_WAREHOUSE and SME_TO_WAREHOUSE are the same. This causes us to stop processing that movement. Here also logic works fine for other XFER records but see these kinds of differences for these 6 movements only.
+
+Attaching the documents with all 10 movements that look different from other movements 
+Please refer to the calidus movements sheet for the actual data. 
+https://docs.google.com/spreadsheets/d/1qquafYCGyG_wTgwDvQ7c_5FhuGuFMuIWXRpIDvXKH4c/edit?gid=1011919619#gid=1011919619
+
+Can you please look into these 2 scenarios and let us know if they are valid and how they work from a business perspective?
+
+Thanks & Regards
+Siddharth
+
+2.  AnSUPPLIER_CODE
+
+Hide quoted text
+On Thu, 7 May 2026 at 12:48, DJ <jnanasriharsha.dattada@abc.co.uk> wrote:Regards,Sri Harsha D J07536179068---------- Forwarded message ---------From: Harj Lasher <harj.lasher@abc.com>Date: Tue, 5 May 2026, 12:07Subject: RE: [EXTERNAL] Reconciling Calidus movementsTo: Manoj Sonavane <manoj.sonavane@abc.co.uk>, Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>Cc: Jon Brittle <Jon.Brittle@abc.com>, Jnanasriharsha Dattada <dj@abc.co.uk>, Sudip Roy <sudip.roy@abc.co.uk>, Apteansupport <Apteansupport@abc.com>, Arindam Sen <arindam.sen@abc.co.uk>
+
+
+
+
+
+Hi,
+
+ 
+
+Faulty bucket
+
+ 
+
+The logic being used does not match the details provided by Aptean (see attached document) i.e.
+
+ 
+
+
+
+
+
+GI to Quarantine (GIQU)
+
+WH_CODE_GIQUA
+
+
+
+WarehouseGIToQuarantine
+
+
+
+Physical+
+
+In Receipt+
+
+[Once putaway:
+
+In Receipt-
+
+Quarantine+]
+
+
+
+
+
+Putaway transaction (PUT)
+
+WH_CODE_PUT
+
+
+
+WarehousePutAway
+
+
+
+Decreases In Receipt
+
+Increases the qty of the condition type (Free, Faulty, Quarantine)
+
+
+
+
+
+Stock Write off adjustment (WOFF)
+
+WH_CODE_OFF
+
+
+
+WarehouseWriteOffAdjustment
+
+
+
+Stock is written off from the bucket related to the stock condition code of the stock trace
+
+Physical-
+
+Free/Faulty/Quarantine-
+
+
+
+
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Harj Lasher
+Sent: 01 May 2026 14:50
+To: 'Manoj Sonavane' <manoj.sonavane@abc.co.uk>; Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Cc: Jon Brittle <Jon.Brittle@abc.com>; Jnanasriharsha Dattada <dj@abc.co.uk>; Sudip Roy <sudip.roy@abc.co.uk>; Apteansupport <Apteansupport@abc.com>; Arindam Sen <arindam.sen@abc.co.uk>
+Subject: RE: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+Hi,
+
+ 
+
+CLSU can do either a write on or write off depending on the Suspense stock position.
+
+ 
+
+When it is negative (e.g. -23 as in case below) a write on is performed i.e. physical and suspense is increased by the inverse of the suspense quantity (e.g. +23 as in case
+ below).
+
+ 
+
+When it is positive a write off is performed i.e. physical and suspense is decreased by the suspense quantity.
+
+ 
+
+To distinguish write on or write off action for a CLSU stock movement extract record you can refer to the SME_STATUS column (i.e. 0 = stock reduction; 1 = stock increase).
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Manoj Sonavane <manoj.sonavane@abc.co.uk>
+Sent: 01 May 2026 06:32
+To: Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Cc: Harj Lasher <Harj.Lasher@abc.com>; Jon Brittle <Jon.Brittle@abc.com>; Jnanasriharsha Dattada <dj@abc.co.uk>; Sudip Roy <sudip.roy@abc.co.uk>; Apteansupport <apteansupport@abc.com>; Arindam Sen <arindam.sen@abc.co.uk>
+Subject: Re: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+Hi Harj / Jon,
+
+ 
+
+Please respond to Ashutosh's queries at your earliest convenience. I would also set up a meeting for Tuesday to discuss any follow-up queries.
+
+ 
+
+-Thanks,
+
+Manoj 
+
+ 
+
+On Wed, 29 Apr 2026 at 18:16, Manoj Sonavane <manoj.sonavane@abc.co.uk> wrote:
+
+
+Looping in aptean support and Arindam for visibility 
+
+ 
+
+On Wed, 29 Apr 2026, 18:13 Ashutosh Bhargava, <ashutosh.bhargava@abc.co.uk> wrote:
+
+
+Hi Harj, 
+
+ 
+
+Thank you for the analysis and for sharing the details. This is very useful for us. We have a couple of other questions. 
+
+ 
+
+FRSU/CLSU movement - SKU:104317 (in 8544 WH) - Reviewing the movements below, Stock Master seems to process CLSU movements differently than Calidus does. Could you please
+ clarify how the movement should be processed? 
+
+
+
+
+
+Description/Movement
+
+
+
+Stock Position
+
+
+
+Stock Master
+Movement details
+
+
+
+Calidus movement details
+
+
+
+
+
+Position on
+15/04/2026 @ 3.45am
+
+
+
+Physical=36
+Suspense=0
+freestock=31
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+Position on
+16/04/2026 @ 3.45am
+
+
+
+Physical=29
+Suspense=0
+freeStock=22
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+FRSU movement on
+16/04/2026 @ 03.49.34 
+
+
+
+Physical=29
+Suspense=-23
+FreeStock=42
+
+
+
+Suspense -ive
+FreeStock +ive
+
+
+
+ 
+
+
+
+
+
+Position on
+24/04/2026 @03.45am
+
+
+
+Physical=52
+Suspense=-23
+FreeStock=70
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+CLSU movement on
+2026-04-24 13:20:38
+
+
+
+Physical=52
+Suspense=0
+
+
+
+Suspense - 23 physical - 23
+
+
+
+It seems Calidus did the following:
+suspense = 0,
+physical +23 
+
+
+
+
+
+Position on
+25/04/2026 @ 3.45am
+
+
+
+Physical=125
+Suspense=0
+FreeStock=69
+
+
+
+ 
+
+
+
+Received 55 units as inReceipt which updated physical
+
+
+
+
+
+ Faulty bucket - Example SKUs 105769,141360, 176669 (in 8166 WH) - We have noticed (for 15/04/2026) that most stock movement to faulty comes with 3 transactions together. GIFA, PUT and
+ WOFF. This causes Stock Master to show an extra negative quantity of Faulty stock compared to Calidus, which adds to faulty stock and writes it off. The logic we are using is 
+
+
+
+
+
+GI to Faulty (GIFA)
+
+
+
+WarehouseGIToFaulty
+
+
+
+physicalStock+
+faulty+
+
+
+
+ 
+
+
+
+
+
+Putaway transaction (PUT)
+
+
+
+WarehousePutAway
+
+
+
+freeStock+ or Faulty+ or
+Quarantine+
+
+
+
+Depending on Stock condition code
+
+
+
+
+
+Stock Write off adjustment (WOFF)
+
+
+
+WarehouseWriteOffAdjustment
+
+
+
+freeStock- or
+faulty-
+
+physicalStock-
+
+
+
+Depending on Stock condition code
+
+
+
+
+
+Kind regards, 
+
+Ashutosh
+
+ 
+
+On Thu, 23 Apr 2026 at 11:28, Harj Lasher <Harj.Lasher@abc.com> wrote:
+
+
+Hi,
+
+ 
+
+1)) The table to query is the STOCK_MOVEMENT_EXTRACT.
+
+See below the query for selecting the extracted movements for the 14th to 16th for SKU 119135.
+
+The output includes the Run Id (SME_RUN_ID), this is included in the name of physical extract file i.e. sme_2973_20260415_03500022.csv
+ and sme_2991_20260415_08200027.csv.
+
+Please query this table with caution as it contains a large number of records and we don’t want to impact the overall performance of Calidus.
+
+ 
+
+select * from stock_movement_extract
+
+where sme_movement_date in (20260414, 20260415, 20260416)
+
+and sme_product_code = '119135'
+
+and sme_processed_ind = 1
+
+and sme_ignored_ind = 0
+
+order by sme_id;
+
+ 
+
+ 
+
+
+
+11170081   20260415   3483516     
+2973          1            0             20260415        3500022   
+      544            119135                73D     GIGD
+
+11202583   20260415   8141691     
+2991          1            0             20260415        8200027   
+      544           119135                73D     PUT
+
+ 
+
+ 
+
+2)) From the output above you can see the GIGD followed by the PUT movements for SKU 119135.
+
+The GIGD was exported in extract sme_2973_20260415_03500022.csv.
+
+The PUT was exported in extract sme_2991_20260415_08200027.csv.
+
+ 
+
+HP-SPKwiccaleSVC1-calsup> pwd
+
+/data/romulas_a/caldata/obsdlive/data_flatfiles/interface/transfer_out/stock_master
+
+HP-SPKwiccaleSVC1-calsup>
+grep 119135 sme_2973_20260415_03500022.csv
+
+"544","119135","73D","GIGD",99885626,1,20260415,3483508,"01032","","","WBS","","","",1.060,"PO","000000703506",1,"544","73D","RACK","05A01R1","21498677",0.000,"NT","","","GI","GD",
+
+"cradj","","",0,"UK","PK000001","",1,"PR",1,26,18,3750.000,3750.000,1,1,0.000,0.000,"1",0,0.000
+
+HP-SPKwiccaleSVC1-calsup>
+grep 119135 sme_2991_20260415_08200027.csv
+
+"544","119135","73D","PUT",99913874,1,20260415,8141690,"01032","","","","","","",1.060,"PO","000000703506",1,"544","73D","RACK","05A01R1","21498677",0.000,"AM","","GI/000000471637-0001","","GD","jreal","","",0,"UK","PK000001","",1,"PR",0,25,34,3750.000,3750.000,1,1,0.000,0.000,"2",0,0.000
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Sent: 22 April 2026 10:58
+To: Harj Lasher <Harj.Lasher@abc.com>;
+ Jon Brittle <jon.brittle@abc.com>
+Cc: Jnanasriharsha Dattada <dj@abc.co.uk>;
+ Manoj Sonavane <manoj.sonavane@abc.co.uk>;
+ Sudip Roy <sudip.roy@abc.co.uk>
+Subject: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+EXTERNAL
+
+
+
+
+ 
+
+Hi Harj and Jon,
+
+ 
+
+Hope you are well. We would like to clarify a couple of points we found during validation and reconciliation between Calidus and Stock Master. 
+
+Calidus movements: We are trying to match the movements received by SM (Stock Master) vs movements in Calidus. Could you please provide us an extract of all movements for April
+ 14, 15 and 16th for SKUs: 152889, 119135, 435228. Attached is 
+the list of movements we received in SM for reference. Please let us know if there is a table we can refer to for querying this view by individual SKUs. GIGD movement: We noticed that for SKU 152889, SM received 3 PUT transactions of 900 each (In the attached file). However, there wasn't any GIGD (Goods Receipting) transaction
+ before any of these PUT transactions. Our understanding was that GIGD would always precede the PUT (putaway) transaction. We noticed a similar issue with SKU 119135, where SM received 1 PUT transaction without any preceding GIGD transaction.
+
+Let us know if you have any questions. Thank you
+
+ 
+
+Kind regards
+
+Ashutosh
+
+--
+Ashutosh Bhargava
+
+ 
+Lead Solution Architect
+
+ 
+Vision House | Colonial Way | Watford | WD24 4JL
+
+ 
+ashutosh.bhargava@abc.co.uk
+       
+
+
+ 
+ 
+ 
+ 
+
+
+ 
+Due to the nature of my role, I may often be away from my desk, however, I’ll respond to your email as soon as possible.
+
+ 
+This e-mail and any attachments are confidential and intended solely for the use of the addressee only. If you have received this message in error, you must not copy,
+ distribute or disclose the contents; please notify the sender immediately and delete the message.
+This message is attributed to the sender and may not necessarily reflect the view of Wickes Building Supplies Limited, Registered in England and Wales 01840419, Vision
+ House, 19
+ Colonial Way, Watford, United Kingdom, WD24 4JL (VAT number 336725881) or its parent company Wickes Group plc (Registered in England No. 12189061; Vision House,
+19
+ Colonial Way, Watford, United Kingdom, WD24 4JL) and any of its subsidiaries.
+Agreements binding Wickes Building Supplies Limited, Wickes Group plc or any of its subsidiaries may not be concluded by means of e-mail communication.
+E-mail transmissions are not secure and Wickes accepts no responsibility for changes made to this message after it was sent. Whilst steps have been taken to ensure that
+ this message is virus free, Wickes accepts no liability for infection and recommends that you scan this e-mail and any attachments.
+
+This message contains information that is confidential and/or may be privileged. If you are not the intended recipient, you are hereby notified that any use, dissemination, distribution or copy of this message and/or its attachments is strictly prohibited.
+ If you have received this message in error, please advise the sender immediately by replying to this email and delete this message. We are committed to your privacy. For more information, please see our Privacy Policy at
+https://www.aptean.com/privacy-statement
+
+
+
+
+ 
+This e-mail and any attachments are confidential and intended solely for the use of the addressee only. If you have received this message in error, you must not copy,
+ distribute or disclose the contents; please notify the sender immediately and delete the message.
+This message is attributed to the sender and may not necessarily reflect the view of Wickes Building Supplies Limited, Registered in England and Wales 01840419, Vision
+ House, 19 Colonial Way, Watford, United Kingdom, WD24 4JL (VAT number 336725881) or its parent company Wickes Group plc (Registered in England No. 12189061; Vision House, 19 Colonial Way, Watford, United Kingdom, WD24 4JL) and any of its subsidiaries.
+Agreements binding Wickes Building Supplies Limited, Wickes Group plc or any of its subsidiaries may not be concluded by means of e-mail communication.
+E-mail transmissions are not secure and Wickes accepts no responsibility for changes made to this message after it was sent. Whilst steps have been taken to ensure that
+ this message is virus free, Wickes accepts no liability for infection and recommends that you scan this e-mail and any attachments.
+This message contains information that is confidential and/or may be privileged. If you are not the intended recipient, you are hereby notified that any use, dissemination, distribution or copy of this message and/or its attachments is strictly prohibited.
+ If you have received this message in error, please advise the sender immediately by replying to this email and delete this message. We are committed to your privacy. For more information, please see our Privacy Policy at https://www.aptean.com/privacy-statement
+---
+Regards,Sri Harsha D J07536179068---------- Forwarded message ---------From: Harj Lasher <harj.lasher@abc.com>Date: Tue, 5 May 2026, 12:07Subject: RE: [EXTERNAL] Reconciling Calidus movementsTo: Manoj Sonavane <manoj.sonavane@abc.co.uk>, Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>Cc: Jon Brittle <Jon.Brittle@abc.com>, Jnanasriharsha Dattada <dj@abc.co.uk>, Sudip Roy <sudip.roy@abc.co.uk>, Apteansupport <Apteansupport@abc.com>, Arindam Sen <arindam.sen@abc.co.uk>
+
+
+
+
+
+Hi,
+
+ 
+
+Faulty bucket
+
+ 
+
+The logic being used does not match the details provided by Aptean (see attached document) i.e.
+
+ 
+
+
+
+
+
+GI to Quarantine (GIQU)
+
+WH_CODE_GIQUA
+
+
+
+WarehouseGIToQuarantine
+
+
+
+Physical+
+
+In Receipt+
+
+[Once putaway:
+
+In Receipt-
+
+Quarantine+]
+
+
+
+
+
+Putaway transaction (PUT)
+
+WH_CODE_PUT
+
+
+
+WarehousePutAway
+
+
+
+Decreases In Receipt
+
+Increases the qty of the condition type (Free, Faulty, Quarantine)
+
+
+
+
+
+Stock Write off adjustment (WOFF)
+
+WH_CODE_OFF
+
+
+
+WarehouseWriteOffAdjustment
+
+
+
+Stock is written off from the bucket related to the stock condition code of the stock trace
+
+Physical-
+
+Free/Faulty/Quarantine-
+
+
+
+
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Harj Lasher
+Sent: 01 May 2026 14:50
+To: 'Manoj Sonavane' <manoj.sonavane@abc.co.uk>; Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Cc: Jon Brittle <Jon.Brittle@abc.com>; Jnanasriharsha Dattada <dj@abc.co.uk>; Sudip Roy <sudip.roy@abc.co.uk>; Apteansupport <Apteansupport@abc.com>; Arindam Sen <arindam.sen@abc.co.uk>
+Subject: RE: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+Hi,
+
+ 
+
+CLSU can do either a write on or write off depending on the Suspense stock position.
+
+ 
+
+When it is negative (e.g. -23 as in case below) a write on is performed i.e. physical and suspense is increased by the inverse of the suspense quantity (e.g. +23 as in case
+ below).
+
+ 
+
+When it is positive a write off is performed i.e. physical and suspense is decreased by the suspense quantity.
+
+ 
+
+To distinguish write on or write off action for a CLSU stock movement extract record you can refer to the SME_STATUS column (i.e. 0 = stock reduction; 1 = stock increase).
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Manoj Sonavane <manoj.sonavane@abc.co.uk>
+Sent: 01 May 2026 06:32
+To: Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Cc: Harj Lasher <Harj.Lasher@abc.com>; Jon Brittle <Jon.Brittle@abc.com>; Jnanasriharsha Dattada <dj@abc.co.uk>; Sudip Roy <sudip.roy@abc.co.uk>; Apteansupport <apteansupport@abc.com>; Arindam Sen <arindam.sen@abc.co.uk>
+Subject: Re: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+Hi Harj / Jon,
+
+ 
+
+Please respond to Ashutosh's queries at your earliest convenience. I would also set up a meeting for Tuesday to discuss any follow-up queries.
+
+ 
+
+-Thanks,
+
+Manoj 
+
+ 
+
+On Wed, 29 Apr 2026 at 18:16, Manoj Sonavane <manoj.sonavane@abc.co.uk> wrote:
+
+
+Looping in aptean support and Arindam for visibility 
+
+ 
+
+On Wed, 29 Apr 2026, 18:13 Ashutosh Bhargava, <ashutosh.bhargava@abc.co.uk> wrote:
+
+
+Hi Harj, 
+
+ 
+
+Thank you for the analysis and for sharing the details. This is very useful for us. We have a couple of other questions. 
+
+ 
+
+FRSU/CLSU movement - SKU:104317 (in 8544 WH) - Reviewing the movements below, Stock Master seems to process CLSU movements differently than Calidus does. Could you please
+ clarify how the movement should be processed? 
+
+
+
+
+
+Description/Movement
+
+
+
+Stock Position
+
+
+
+Stock Master
+Movement details
+
+
+
+Calidus movement details
+
+
+
+
+
+Position on
+15/04/2026 @ 3.45am
+
+
+
+Physical=36
+Suspense=0
+freestock=31
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+Position on
+16/04/2026 @ 3.45am
+
+
+
+Physical=29
+Suspense=0
+freeStock=22
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+FRSU movement on
+16/04/2026 @ 03.49.34 
+
+
+
+Physical=29
+Suspense=-23
+FreeStock=42
+
+
+
+Suspense -ive
+FreeStock +ive
+
+
+
+ 
+
+
+
+
+
+Position on
+24/04/2026 @03.45am
+
+
+
+Physical=52
+Suspense=-23
+FreeStock=70
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+CLSU movement on
+2026-04-24 13:20:38
+
+
+
+Physical=52
+Suspense=0
+
+
+
+Suspense - 23 physical - 23
+
+
+
+It seems Calidus did the following:
+suspense = 0,
+physical +23 
+
+
+
+
+
+Position on
+25/04/2026 @ 3.45am
+
+
+
+Physical=125
+Suspense=0
+FreeStock=69
+
+
+
+ 
+
+
+
+Received 55 units as inReceipt which updated physical
+
+
+
+
+
+ Faulty bucket - Example SKUs 105769,141360, 176669 (in 8166 WH) - We have noticed (for 15/04/2026) that most stock movement to faulty comes with 3 transactions together. GIFA, PUT and
+ WOFF. This causes Stock Master to show an extra negative quantity of Faulty stock compared to Calidus, which adds to faulty stock and writes it off. The logic we are using is 
+
+
+
+
+
+GI to Faulty (GIFA)
+
+
+
+WarehouseGIToFaulty
+
+
+
+physicalStock+
+faulty+
+
+
+
+ 
+
+
+
+
+
+Putaway transaction (PUT)
+
+
+
+WarehousePutAway
+
+
+
+freeStock+ or Faulty+ or
+Quarantine+
+
+
+
+Depending on Stock condition code
+
+
+
+
+
+Stock Write off adjustment (WOFF)
+
+
+
+WarehouseWriteOffAdjustment
+
+
+
+freeStock- or
+faulty-
+
+physicalStock-
+
+
+
+Depending on Stock condition code
+
+
+
+
+
+Kind regards, 
+
+Ashutosh
+
+ 
+
+On Thu, 23 Apr 2026 at 11:28, Harj Lasher <Harj.Lasher@abc.com> wrote:
+
+
+Hi,
+
+ 
+
+1)) The table to query is the STOCK_MOVEMENT_EXTRACT.
+
+See below the query for selecting the extracted movements for the 14th to 16th for SKU 119135.
+
+The output includes the Run Id (SME_RUN_ID), this is included in the name of physical extract file i.e. sme_2973_20260415_03500022.csv
+ and sme_2991_20260415_08200027.csv.
+
+Please query this table with caution as it contains a large number of records and we don’t want to impact the overall performance of Calidus.
+
+ 
+
+select * from stock_movement_extract
+
+where sme_movement_date in (20260414, 20260415, 20260416)
+
+and sme_product_code = '119135'
+
+and sme_processed_ind = 1
+
+and sme_ignored_ind = 0
+
+order by sme_id;
+
+ 
+
+ 
+
+
+
+11170081   20260415   3483516     
+2973          1            0             20260415        3500022   
+      544            119135                73D     GIGD
+
+11202583   20260415   8141691     
+2991          1            0             20260415        8200027   
+      544           119135                73D     PUT
+
+ 
+
+ 
+
+2)) From the output above you can see the GIGD followed by the PUT movements for SKU 119135.
+
+The GIGD was exported in extract sme_2973_20260415_03500022.csv.
+
+The PUT was exported in extract sme_2991_20260415_08200027.csv.
+
+ 
+
+HP-SPKwiccaleSVC1-calsup> pwd
+
+/data/romulas_a/caldata/obsdlive/data_flatfiles/interface/transfer_out/stock_master
+
+HP-SPKwiccaleSVC1-calsup>
+grep 119135 sme_2973_20260415_03500022.csv
+
+"544","119135","73D","GIGD",99885626,1,20260415,3483508,"01032","","","WBS","","","",1.060,"PO","000000703506",1,"544","73D","RACK","05A01R1","21498677",0.000,"NT","","","GI","GD",
+
+"cradj","","",0,"UK","PK000001","",1,"PR",1,26,18,3750.000,3750.000,1,1,0.000,0.000,"1",0,0.000
+
+HP-SPKwiccaleSVC1-calsup>
+grep 119135 sme_2991_20260415_08200027.csv
+
+"544","119135","73D","PUT",99913874,1,20260415,8141690,"01032","","","","","","",1.060,"PO","000000703506",1,"544","73D","RACK","05A01R1","21498677",0.000,"AM","","GI/000000471637-0001","","GD","jreal","","",0,"UK","PK000001","",1,"PR",0,25,34,3750.000,3750.000,1,1,0.000,0.000,"2",0,0.000
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Sent: 22 April 2026 10:58
+To: Harj Lasher <Harj.Lasher@abc.com>;
+ Jon Brittle <jon.brittle@abc.com>
+Cc: Jnanasriharsha Dattada <dj@abc.co.uk>;
+ Manoj Sonavane <manoj.sonavane@abc.co.uk>;
+ Sudip Roy <sudip.roy@abc.co.uk>
+Subject: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+EXTERNAL
+
+
+
+
+ 
+
+Hi Harj and Jon,
+
+ 
+
+Hope you are well. We would like to clarify a couple of points we found during validation and reconciliation between Calidus and Stock Master. 
+
+Calidus movements: We are trying to match the movements received by SM (Stock Master) vs movements in Calidus. Could you please provide us an extract of all movements for April
+ 14, 15 and 16th for SKUs: 152889, 119135, 435228. Attached is 
+the list of movements we received in SM for reference. Please let us know if there is a table we can refer to for querying this view by individual SKUs. GIGD movement: We noticed that for SKU 152889, SM received 3 PUT transactions of 900 each (In the attached file). However, there wasn't any GIGD (Goods Receipting) transaction
+ before any of these PUT transactions. Our understanding was that GIGD would always precede the PUT (putaway) transaction. We noticed a similar issue with SKU 119135, where SM received 1 PUT transaction without any preceding GIGD transaction.
+
+Let us know if you have any questions. Thank you
+
+ 
+
+Kind regards
+
+Ashutosh
+
+--
+Ashutosh Bhargava
+
+ 
+Lead Solution Architect
+
+ 
+Vision House | Colonial Way | Watford | WD24 4JL
+
+ 
+ashutosh.bhargava@abc.co.uk
+       
+
+
+ 
+ 
+ 
+ 
+
+
+ 
+Due to the nature of my role, I may often be away from my desk, however, I’ll respond to your email as soon as possible.
+
+ 
+This e-mail and any attachments are confidential and intended solely for the use of the addressee only. If you have received this message in error, you must not copy,
+ distribute or disclose the contents; please notify the sender immediately and delete the message.
+This message is attributed to the sender and may not necessarily reflect the view of Wickes Building Supplies Limited, Registered in England and Wales 01840419, Vision
+ House, 19
+ Colonial Way, Watford, United Kingdom, WD24 4JL (VAT number 336725881) or its parent company Wickes Group plc (Registered in England No. 12189061; Vision House,
+19
+ Colonial Way, Watford, United Kingdom, WD24 4JL) and any of its subsidiaries.
+Agreements binding Wickes Building Supplies Limited, Wickes Group plc or any of its subsidiaries may not be concluded by means of e-mail communication.
+E-mail transmissions are not secure and Wickes accepts no responsibility for changes made to this message after it was sent. Whilst steps have been taken to ensure that
+ this message is virus free, Wickes accepts no liability for infection and recommends that you scan this e-mail and any attachments.
+
+This message contains information that is confidential and/or may be privileged. If you are not the intended recipient, you are hereby notified that any use, dissemination, distribution or copy of this message and/or its attachments is strictly prohibited.
+ If you have received this message in error, please advise the sender immediately by replying to this email and delete this message. We are committed to your privacy. For more information, please see our Privacy Policy at
+https://www.aptean.com/privacy-statement
+
+
+
+
+ 
+This e-mail and any attachments are confidential and intended solely for the use of the addressee only. If you have received this message in error, you must not copy,
+ distribute or disclose the contents; please notify the sender immediately and delete the message.
+This message is attributed to the sender and may not necessarily reflect the view of Wickes Building Supplies Limited, Registered in England and Wales 01840419, Vision
+ House, 19 Colonial Way, Watford, United Kingdom, WD24 4JL (VAT number 336725881) or its parent company Wickes Group plc (Registered in England No. 12189061; Vision House, 19 Colonial Way, Watford, United Kingdom, WD24 4JL) and any of its subsidiaries.
+Agreements binding Wickes Building Supplies Limited, Wickes Group plc or any of its subsidiaries may not be concluded by means of e-mail communication.
+E-mail transmissions are not secure and Wickes accepts no responsibility for changes made to this message after it was sent. Whilst steps have been taken to ensure that
+ this message is virus free, Wickes accepts no liability for infection and recommends that you scan this e-mail and any attachments.
+This message contains information that is confidential and/or may be privileged. If you are not the intended recipient, you are hereby notified that any use, dissemination, distribution or copy of this message and/or its attachments is strictly prohibited.
+ If you have received this message in error, please advise the sender immediately by replying to this email and delete this message. We are committed to your privacy. For more information, please see our Privacy Policy at https://www.aptean.com/privacy-statement
+---
+---------- Forwarded message ---------From: Harj Lasher <harj.lasher@abc.com>Date: Tue, 5 May 2026, 12:07Subject: RE: [EXTERNAL] Reconciling Calidus movementsTo: Manoj Sonavane <manoj.sonavane@abc.co.uk>, Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>Cc: Jon Brittle <Jon.Brittle@abc.com>, Jnanasriharsha Dattada <dj@abc.co.uk>, Sudip Roy <sudip.roy@abc.co.uk>, Apteansupport <Apteansupport@abc.com>, Arindam Sen <arindam.sen@abc.co.uk>
+
+
+
+
+
+Hi,
+
+ 
+
+Faulty bucket
+
+ 
+
+The logic being used does not match the details provided by Aptean (see attached document) i.e.
+
+ 
+
+
+
+
+
+GI to Quarantine (GIQU)
+
+WH_CODE_GIQUA
+
+
+
+WarehouseGIToQuarantine
+
+
+
+Physical+
+
+In Receipt+
+
+[Once putaway:
+
+In Receipt-
+
+Quarantine+]
+
+
+
+
+
+Putaway transaction (PUT)
+
+WH_CODE_PUT
+
+
+
+WarehousePutAway
+
+
+
+Decreases In Receipt
+
+Increases the qty of the condition type (Free, Faulty, Quarantine)
+
+
+
+
+
+Stock Write off adjustment (WOFF)
+
+WH_CODE_OFF
+
+
+
+WarehouseWriteOffAdjustment
+
+
+
+Stock is written off from the bucket related to the stock condition code of the stock trace
+
+Physical-
+
+Free/Faulty/Quarantine-
+
+
+
+
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Harj Lasher
+Sent: 01 May 2026 14:50
+To: 'Manoj Sonavane' <manoj.sonavane@abc.co.uk>; Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Cc: Jon Brittle <Jon.Brittle@abc.com>; Jnanasriharsha Dattada <dj@abc.co.uk>; Sudip Roy <sudip.roy@abc.co.uk>; Apteansupport <Apteansupport@abc.com>; Arindam Sen <arindam.sen@abc.co.uk>
+Subject: RE: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+Hi,
+
+ 
+
+CLSU can do either a write on or write off depending on the Suspense stock position.
+
+ 
+
+When it is negative (e.g. -23 as in case below) a write on is performed i.e. physical and suspense is increased by the inverse of the suspense quantity (e.g. +23 as in case
+ below).
+
+ 
+
+When it is positive a write off is performed i.e. physical and suspense is decreased by the suspense quantity.
+
+ 
+
+To distinguish write on or write off action for a CLSU stock movement extract record you can refer to the SME_STATUS column (i.e. 0 = stock reduction; 1 = stock increase).
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Manoj Sonavane <manoj.sonavane@abc.co.uk>
+Sent: 01 May 2026 06:32
+To: Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Cc: Harj Lasher <Harj.Lasher@abc.com>; Jon Brittle <Jon.Brittle@abc.com>; Jnanasriharsha Dattada <dj@abc.co.uk>; Sudip Roy <sudip.roy@abc.co.uk>; Apteansupport <apteansupport@abc.com>; Arindam Sen <arindam.sen@abc.co.uk>
+Subject: Re: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+Hi Harj / Jon,
+
+ 
+
+Please respond to Ashutosh's queries at your earliest convenience. I would also set up a meeting for Tuesday to discuss any follow-up queries.
+
+ 
+
+-Thanks,
+
+Manoj 
+
+ 
+
+On Wed, 29 Apr 2026 at 18:16, Manoj Sonavane <manoj.sonavane@abc.co.uk> wrote:
+
+
+Looping in aptean support and Arindam for visibility 
+
+ 
+
+On Wed, 29 Apr 2026, 18:13 Ashutosh Bhargava, <ashutosh.bhargava@abc.co.uk> wrote:
+
+
+Hi Harj, 
+
+ 
+
+Thank you for the analysis and for sharing the details. This is very useful for us. We have a couple of other questions. 
+
+ 
+
+FRSU/CLSU movement - SKU:104317 (in 8544 WH) - Reviewing the movements below, Stock Master seems to process CLSU movements differently than Calidus does. Could you please
+ clarify how the movement should be processed? 
+
+
+
+
+
+Description/Movement
+
+
+
+Stock Position
+
+
+
+Stock Master
+Movement details
+
+
+
+Calidus movement details
+
+
+
+
+
+Position on
+15/04/2026 @ 3.45am
+
+
+
+Physical=36
+Suspense=0
+freestock=31
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+Position on
+16/04/2026 @ 3.45am
+
+
+
+Physical=29
+Suspense=0
+freeStock=22
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+FRSU movement on
+16/04/2026 @ 03.49.34 
+
+
+
+Physical=29
+Suspense=-23
+FreeStock=42
+
+
+
+Suspense -ive
+FreeStock +ive
+
+
+
+ 
+
+
+
+
+
+Position on
+24/04/2026 @03.45am
+
+
+
+Physical=52
+Suspense=-23
+FreeStock=70
+
+
+
+ 
+
+
+
+ 
+
+
+
+
+
+CLSU movement on
+2026-04-24 13:20:38
+
+
+
+Physical=52
+Suspense=0
+
+
+
+Suspense - 23 physical - 23
+
+
+
+It seems Calidus did the following:
+suspense = 0,
+physical +23 
+
+
+
+
+
+Position on
+25/04/2026 @ 3.45am
+
+
+
+Physical=125
+Suspense=0
+FreeStock=69
+
+
+
+ 
+
+
+
+Received 55 units as inReceipt which updated physical
+
+
+
+
+
+ Faulty bucket - Example SKUs 105769,141360, 176669 (in 8166 WH) - We have noticed (for 15/04/2026) that most stock movement to faulty comes with 3 transactions together. GIFA, PUT and
+ WOFF. This causes Stock Master to show an extra negative quantity of Faulty stock compared to Calidus, which adds to faulty stock and writes it off. The logic we are using is 
+
+
+
+
+
+GI to Faulty (GIFA)
+
+
+
+WarehouseGIToFaulty
+
+
+
+physicalStock+
+faulty+
+
+
+
+ 
+
+
+
+
+
+Putaway transaction (PUT)
+
+
+
+WarehousePutAway
+
+
+
+freeStock+ or Faulty+ or
+Quarantine+
+
+
+
+Depending on Stock condition code
+
+
+
+
+
+Stock Write off adjustment (WOFF)
+
+
+
+WarehouseWriteOffAdjustment
+
+
+
+freeStock- or
+faulty-
+
+physicalStock-
+
+
+
+Depending on Stock condition code
+
+
+
+
+
+Kind regards, 
+
+Ashutosh
+
+ 
+
+On Thu, 23 Apr 2026 at 11:28, Harj Lasher <Harj.Lasher@abc.com> wrote:
+
+
+Hi,
+
+ 
+
+1)) The table to query is the STOCK_MOVEMENT_EXTRACT.
+
+See below the query for selecting the extracted movements for the 14th to 16th for SKU 119135.
+
+The output includes the Run Id (SME_RUN_ID), this is included in the name of physical extract file i.e. sme_2973_20260415_03500022.csv
+ and sme_2991_20260415_08200027.csv.
+
+Please query this table with caution as it contains a large number of records and we don’t want to impact the overall performance of Calidus.
+
+ 
+
+select * from stock_movement_extract
+
+where sme_movement_date in (20260414, 20260415, 20260416)
+
+and sme_product_code = '119135'
+
+and sme_processed_ind = 1
+
+and sme_ignored_ind = 0
+
+order by sme_id;
+
+ 
+
+ 
+
+
+
+11170081   20260415   3483516     
+2973          1            0             20260415        3500022   
+      544            119135                73D     GIGD
+
+11202583   20260415   8141691     
+2991          1            0             20260415        8200027   
+      544           119135                73D     PUT
+
+ 
+
+ 
+
+2)) From the output above you can see the GIGD followed by the PUT movements for SKU 119135.
+
+The GIGD was exported in extract sme_2973_20260415_03500022.csv.
+
+The PUT was exported in extract sme_2991_20260415_08200027.csv.
+
+ 
+
+HP-SPKwiccaleSVC1-calsup> pwd
+
+/data/romulas_a/caldata/obsdlive/data_flatfiles/interface/transfer_out/stock_master
+
+HP-SPKwiccaleSVC1-calsup>
+grep 119135 sme_2973_20260415_03500022.csv
+
+"544","119135","73D","GIGD",99885626,1,20260415,3483508,"01032","","","WBS","","","",1.060,"PO","000000703506",1,"544","73D","RACK","05A01R1","21498677",0.000,"NT","","","GI","GD",
+
+"cradj","","",0,"UK","PK000001","",1,"PR",1,26,18,3750.000,3750.000,1,1,0.000,0.000,"1",0,0.000
+
+HP-SPKwiccaleSVC1-calsup>
+grep 119135 sme_2991_20260415_08200027.csv
+
+"544","119135","73D","PUT",99913874,1,20260415,8141690,"01032","","","","","","",1.060,"PO","000000703506",1,"544","73D","RACK","05A01R1","21498677",0.000,"AM","","GI/000000471637-0001","","GD","jreal","","",0,"UK","PK000001","",1,"PR",0,25,34,3750.000,3750.000,1,1,0.000,0.000,"2",0,0.000
+
+ 
+
+Regards,
+
+Harj
+
+ 
+
+
+From: Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+Sent: 22 April 2026 10:58
+To: Harj Lasher <Harj.Lasher@abc.com>;
+ Jon Brittle <jon.brittle@abc.com>
+Cc: Jnanasriharsha Dattada <dj@abc.co.uk>;
+ Manoj Sonavane <manoj.sonavane@abc.co.uk>;
+ Sudip Roy <sudip.roy@abc.co.uk>
+Subject: [EXTERNAL] Reconciling Calidus movements
+
+
+ 
+
+EXTERNAL
+
+
+
+
+ 
+
+Hi Harj and Jon,
+
+ 
+
+Hope you are well. We would like to clarify a couple of points we found during validation and reconciliation between Calidus and Stock Master. 
+
+Calidus movements: We are trying to match the movements received by SM (Stock Master) vs movements in Calidus. Could you please provide us an extract of all movements for April
+ 14, 15 and 16th for SKUs: 152889, 119135, 435228. Attached is 
+the list of movements we received in SM for reference. Please let us know if there is a table we can refer to for querying this view by individual SKUs. GIGD movement: We noticed that for SKU 152889, SM received 3 PUT transactions of 900 each (In the attached file). However, there wasn't any GIGD (Goods Receipting) transaction
+ before any of these PUT transactions. Our understanding was that GIGD would always precede the PUT (putaway) transaction. We noticed a similar issue with SKU 119135, where SM received 1 PUT transaction without any preceding GIGD transaction.
+
+Let us know if you have any questions. Thank you
+
+ 
+
+Kind regards
+
+Ashutosh
+
+--
+Ashutosh Bhargava
+
+ 
+Lead Solution Architect
+
+ 
+Vision House | Colonial Way | Watford | WD24 4JL
+
+ 
+ashutosh.bhargava@abc.co.uk
+       
+
+
+ 
+ 
+ 
+ 
+
+
+ 
+Due to the nature of my role, I may often be away from my desk, however, I’ll respond to your email as soon as possible.
+
+ 
+This e-mail and any attachments are confidential and intended solely for the use of the addressee only. If you have received this message in error, you must not copy,
+ distribute or disclose the contents; please notify the sender immediately and delete the message.
+This message is attributed to the sender and may not necessarily reflect the view of Wickes Building Supplies Limited, Registered in England and Wales 01840419, Vision
+ House, 19
+ Colonial Way, Watford, United Kingdom, WD24 4JL (VAT number 336725881) or its parent company Wickes Group plc (Registered in England No. 12189061; Vision House,
+19
+ Colonial Way, Watford, United Kingdom, WD24 4JL) and any of its subsidiaries.
+Agreements binding Wickes Building Supplies Limited, Wickes Group plc or any of its subsidiaries may not be concluded by means of e-mail communication.
+E-mail transmissions are not secure and Wickes accepts no responsibility for changes made to this message after it was sent. Whilst steps have been taken to ensure that
+ this message is virus free, Wickes accepts no liability for infection and recommends that you scan this e-mail and any attachments.
+
+This message contains information that is confidential and/or may be privileged. If you are not the intended recipient, you are hereby notified that any use, dissemination, distribution or copy of this message and/or its attachments is strictly prohibited.
+ If you have received this message in error, please advise the sender immediately by replying to this email and delete this message. We are committed to your privacy. For more information, please see our Privacy Policy at
+https://www.aptean.com/privacy-statement
+
+
+
+
+ 
+This e-mail and any attachments are confidential and intended solely for the use of the addressee only. If you have received this message in error, you must not copy,
+ distribute or disclose the contents; please notify the sender immediately and delete the message.
+This message is attributed to the sender and may not necessarily reflect the view of Wickes Building Supplies Limited, Registered in England and Wales 01840419, Vision
+ House, 19 Colonial Way, Watford, United Kingdom, WD24 4JL (VAT number 336725881) or its parent company Wickes Group plc (Registered in England No. 12189061; Vision House, 19 Colonial Way, Watford, United Kingdom, WD24 4JL) and any of its subsidiaries.
+Agreements binding Wickes Building Supplies Limited, Wickes Group plc or any of its subsidiaries may not be concluded by means of e-mail communication.
+E-mail transmissions are not secure and Wickes accepts no responsibility for changes made to this message after it was sent. Whilst steps have been taken to ensure that
+ this message is virus free, Wickes accepts no liability for infection and recommends that you scan this e-mail and any attachments.
+This message contains information that is confidential and/or may be privileged. If you are not the intended recipient, you are hereby notified that any use, dissemination, distribution or copy of this message and/or its attachments is strictly prohibited.
+ If you have received this message in error, please advise the sender immediately by replying to this email and delete this message. We are committed to your privacy. For more information, please see our Privacy Policy at https://www.aptean.com/privacy-statement

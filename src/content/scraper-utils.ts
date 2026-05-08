@@ -57,13 +57,11 @@ export function htmlToText(html: string): string {
     // List items
     .replace(/<li[^>]*>/gi, '• ')
     .replace(/<\/li>/gi, '\n')
-    // Common HTML entities
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
+    // Only convert &nbsp; to regular space here — all other entities (&lt;, &gt;,
+    // &amp;, etc.) must stay encoded so the subsequent innerHTML assignment does
+    // not re-parse "<alice@example.com>" as an HTML tag.  textContent on the
+    // final div decodes the remaining entities correctly.
+    .replace(/&nbsp;/gi, ' ');
 
   const div = document.createElement('div');
   div.innerHTML = processed;
