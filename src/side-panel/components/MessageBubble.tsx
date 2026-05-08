@@ -5,9 +5,21 @@ import { AttachmentChip } from './AttachmentChip';
 interface Props {
   message: ParsedMessage;
   showSenderName: boolean;
+  searchQuery?: string;
 }
 
-export function MessageBubble({ message, showSenderName }: Props) {
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  return parts.map((part, i) =>
+    part.toLowerCase() === query.toLowerCase()
+      ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 rounded px-0.5">{part}</mark>
+      : part
+  );
+}
+
+export function MessageBubble({ message, showSenderName, searchQuery = '' }: Props) {
   const { sender, body, quotedText, timestamp, isCurrentUser } = message;
 
   const time = (() => {
@@ -25,7 +37,7 @@ export function MessageBubble({ message, showSenderName }: Props) {
           <div className="bg-blue-500 text-white rounded-2xl rounded-tr-sm px-3 py-2 text-sm">
             {message.bodyHtml
               ? <div className="text-sm email-body" dangerouslySetInnerHTML={{ __html: message.bodyHtml }} />
-              : <p className="whitespace-pre-wrap break-words">{body}</p>
+              : <p className="whitespace-pre-wrap break-words">{highlightText(body, searchQuery)}</p>
             }
             {quotedText && <QuotedText text={quotedText} />}
           </div>
@@ -36,7 +48,7 @@ export function MessageBubble({ message, showSenderName }: Props) {
               ))}
             </div>
           )}
-          <p className="text-right text-xs text-gray-400 mt-0.5 pr-1">{time}</p>
+          <p className="text-right text-xs text-gray-400 dark:text-gray-500 mt-0.5 pr-1">{time}</p>
         </div>
       </div>
     );
@@ -52,12 +64,12 @@ export function MessageBubble({ message, showSenderName }: Props) {
       </div>
       <div className="max-w-[80%]">
         {showSenderName && (
-          <p className="text-xs text-gray-500 mb-0.5 ml-1">{sender.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5 ml-1">{sender.name}</p>
         )}
-        <div className="bg-white text-gray-800 rounded-2xl rounded-tl-sm px-3 py-2 text-sm shadow-sm border border-gray-100">
+        <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-tl-sm px-3 py-2 text-sm shadow-sm border border-gray-100 dark:border-gray-700">
           {message.bodyHtml
             ? <div className="text-sm email-body" dangerouslySetInnerHTML={{ __html: message.bodyHtml }} />
-            : <p className="whitespace-pre-wrap break-words">{body}</p>
+            : <p className="whitespace-pre-wrap break-words">{highlightText(body, searchQuery)}</p>
           }
           {quotedText && <QuotedText text={quotedText} />}
         </div>
@@ -68,7 +80,7 @@ export function MessageBubble({ message, showSenderName }: Props) {
             ))}
           </div>
         )}
-        <p className="text-xs text-gray-400 mt-0.5 ml-1">{time}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 ml-1">{time}</p>
       </div>
     </div>
   );
