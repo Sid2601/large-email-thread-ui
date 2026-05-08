@@ -8,14 +8,14 @@ interface Props {
 
 export function ParticipantSidebar({ participants, selectedEmail, onSelect }: Props) {
   return (
-    <div className="flex gap-2 px-3 py-2 overflow-x-auto shrink-0 border-b border-gray-200 bg-white">
+    <div className="flex gap-2 px-3 py-2 overflow-x-auto shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
       {/* All chip */}
       <button
         onClick={() => onSelect(null)}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap border transition-colors ${
           selectedEmail === null
             ? 'bg-blue-500 text-white border-blue-500'
-            : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+            : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500'
         }`}
       >
         All
@@ -31,7 +31,7 @@ export function ParticipantSidebar({ participants, selectedEmail, onSelect }: Pr
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap border transition-colors ${
             selectedEmail === p.sender.email
               ? 'text-white border-transparent'
-              : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500'
           }`}
           style={selectedEmail === p.sender.email ? { backgroundColor: p.sender.avatarColor, borderColor: p.sender.avatarColor } : {}}
         >
