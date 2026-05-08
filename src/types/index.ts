@@ -5,6 +5,13 @@ export interface Sender {
   avatarColor: string;
 }
 
+export interface Attachment {
+  name: string;
+  mimeType: string;
+  sizeLabel: string;
+  downloadUrl: string;
+}
+
 export interface ParsedMessage {
   id: string;
   sender: Sender;
@@ -13,6 +20,8 @@ export interface ParsedMessage {
   quotedText?: string;
   isCurrentUser: boolean;
   index: number;
+  attachments?: Attachment[];
+  bodyHtml?: string;
 }
 
 export interface Participant {
