@@ -1,5 +1,5 @@
-import type { ParsedMessage, ExtensionMessage } from '../types';
-import { buildSender, stripQuotedText, debounce, generateId } from './scraper-utils';
+import type { ParsedMessage, Attachment, ExtensionMessage } from '../types';
+import { buildSender, stripQuotedText, debounce, generateId, mimeFromExtension, sanitizeEmailHtml } from './scraper-utils';
 import { threadCache } from './thread-cache';
 import { parseQuotedChain } from './quoted-chain-parser';
 
@@ -67,6 +67,31 @@ function tryExpandAll(): void {
   });
 }
 
+function scrapeAttachments(msgEl: HTMLElement): Attachment[] {
+  const chips: Element[] = [];
+  // Try multiple Gmail attachment chip selectors
+  for (const sel of ['.aZo', '.M2 .aQy', '[data-tooltip*="."]']) {
+    const found = Array.from(msgEl.querySelectorAll<Element>(sel));
+    if (found.length > 0) { chips.push(...found); break; }
+  }
+
+  return chips.flatMap(chip => {
+    const tooltip = chip.getAttribute('data-tooltip') ??
+                    chip.querySelector('[data-tooltip]')?.getAttribute('data-tooltip') ?? '';
+    const name = tooltip.trim();
+    if (!name || !name.includes('.')) return [];
+
+    const sizeEl = chip.querySelector('.aV3, [class*="size"]');
+    const sizeLabel = sizeEl?.textContent?.trim() ?? '';
+
+    const link = chip.querySelector<HTMLAnchorElement>('a[href*="view=att"], a[href*="attid"]');
+    const downloadUrl = link?.href ?? '';
+    if (!downloadUrl) return [];
+
+    return [{ name, mimeType: mimeFromExtension(name), sizeLabel, downloadUrl }];
+  });
+}
+
 function parseMessages(currentUserEmail: string): ParsedMessage[] {
   const seen = new Set<string>();
   const messages: ParsedMessage[] = [];
@@ -112,6 +137,13 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     const { body, quotedText } = stripQuotedText(bodyEl);
     if (!body) return;
 
+    const attachments = scrapeAttachments(el);
+
+    // Build sanitized HTML body
+    const htmlClone = bodyEl.cloneNode(true) as Element;
+    htmlClone.querySelectorAll('.gmail_quote, .gmail_attr, u.q, [class*="elided"]').forEach(e => e.remove());
+    const bodyHtml = sanitizeEmailHtml(htmlClone.innerHTML);
+
     messages.push({
       id: domMessageId,
       sender: buildSender(senderName, senderEmail),
@@ -122,6 +154,8 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
         ? senderEmail.toLowerCase() === currentUserEmail.toLowerCase()
         : false,
       index,
+      ...(attachments.length > 0 ? { attachments } : {}),
+      ...(bodyHtml ? { bodyHtml } : {}),
     });
   });
 
