@@ -29,8 +29,7 @@ const GMAIL_FORWARD_RE = /[-─—]{5,}\s*Forwarded message\s*[-─—]{5,}/i;
 const OUTLOOK_SEP_RE =
   /^(?:From|De|Von|Van):\s+(.+?)(?:\n(?:Sent|Date|Envoyé|Gesendet|Verzonden):\s+(.+?))?(?:\n[^\n]+){0,3}\n(?:To|À|An|Aan):/m;
 
-// Legal disclaimer stripping — corporate emails repeat these verbatim
-// DISCLAIMER_RE no longer needed — merged into normalizeBody's single strip regex
+// Legal disclaimer stripping — corporate emails repeat these verbatim in every reply.
 
 // ── segment types ────────────────────────────────────────────────────────────
 
