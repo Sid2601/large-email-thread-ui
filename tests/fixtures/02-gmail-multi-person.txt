@@ -1,0 +1,14 @@
+<div>
+  <div class="gmail_attr">On Tue, Apr 7, 2026 at 10:00 AM <a href="mailto:carol@example.com">Carol Jones</a> wrote:</div>
+  <blockquote class="gmail_quote">
+    I agree with Alice. Let me join the review too.
+    <div class="gmail_attr">On Mon, Apr 6, 2026 at 3:30 PM <a href="mailto:bob@example.com">Bob Davis</a> wrote:</div>
+    <blockquote class="gmail_quote">
+      Sure Alice, I'll have it ready by Thursday EOD.
+      <div class="gmail_attr">On Mon, Apr 6, 2026 at 2:57 PM <a href="mailto:alice@example.com">Alice Smith</a> wrote:</div>
+      <blockquote class="gmail_quote">
+        Hi Bob, can you review the proposal by Friday?
+      </blockquote>
+    </blockquote>
+  </blockquote>
+</div>

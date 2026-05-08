@@ -1,0 +1,31 @@
+Please see the forwarded Outlook chain below.
+
+---------- Forwarded message ---------
+From: Alice Smith <alice@example.com>
+Date: Fri, 10 Apr 2026 at 11:30 AM
+Subject: Fwd: Server Migration Update
+To: manager@example.com
+
+FYI on the migration discussion.
+
+From: DevOps Team <devops@example.com>
+Sent: Thursday, April 9, 2026 3:00 PM
+To: Alice Smith <alice@example.com>
+Subject: Server Migration Update
+
+Hi Alice,
+
+The server migration is scheduled for Saturday 2 AM UTC. Downtime estimated at 45 minutes.
+
+Please notify stakeholders.
+
+From: Alice Smith <alice@example.com>
+Sent: Thursday, April 9, 2026 9:00 AM
+To: DevOps Team <devops@example.com>
+Subject: Server Migration Update
+
+DevOps,
+
+When is the next migration window? We need to plan around the product launch.
+
+Alice

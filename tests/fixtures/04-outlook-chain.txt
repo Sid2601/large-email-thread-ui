@@ -1,0 +1,25 @@
+Sounds good, I will send the report first thing tomorrow.
+
+From: Alice Smith <alice@example.com>
+Sent: 2026-04-08 16:30:00
+To: Bob Davis <bob@example.com>
+Subject: Re: Weekly Report
+
+Bob,
+
+Can you please send the weekly report before 9 AM tomorrow?
+
+Thanks,
+Alice
+
+From: Bob Davis <bob@example.com>
+Sent: 2026-04-08 14:00:00
+To: Alice Smith <alice@example.com>
+Subject: Weekly Report
+
+Hi Alice,
+
+I am preparing the weekly report now. Should have it ready by end of day.
+
+Best,
+Bob

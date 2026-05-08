@@ -1,0 +1,5 @@
+<div>
+  <p>Hi team, welcome to the project kickoff thread.</p>
+  <p>Please review the attached onboarding document and reply with any questions.</p>
+  <p>Best regards,<br>Alice</p>
+</div>

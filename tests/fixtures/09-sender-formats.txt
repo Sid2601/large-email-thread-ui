@@ -1,0 +1,22 @@
+Following up on the discussion below.
+
+From: alice@example.com
+Sent: 2026-04-06 10:00:00
+To: team@example.com
+Subject: Re: Team Sync
+
+Please confirm attendance for the 3 PM sync.
+
+From: "Bob Davis (Contractor)" <bob.davis@contractor.example.com>
+Sent: 2026-04-06 09:30:00
+To: alice@example.com
+Subject: Team Sync
+
+Hi, I can make 3 PM work today.
+
+From: no-reply@calendar.example.com
+Sent: 2026-04-06 08:00:00
+To: team@example.com
+Subject: Team Sync
+
+You have a meeting: Team Sync at 3 PM in Conference Room B.

@@ -1,0 +1,18 @@
+FYI — forwarding this for awareness.
+
+---------- Forwarded message ---------
+From: Bob Davis <bob@example.com>
+Date: Thu, 3 Apr 2026 at 09:15 AM
+Subject: Q2 Budget Proposal
+To: alice@example.com
+
+Hi team,
+
+Please find the Q2 budget proposal attached. Key highlights:
+- Engineering headcount: +2 FTEs
+- Infrastructure budget: $50k increase
+- Travel budget: unchanged
+
+Let me know if you have questions.
+
+Bob

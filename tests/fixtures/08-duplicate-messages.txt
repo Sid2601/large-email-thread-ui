@@ -1,0 +1,6 @@
+<div>
+  <div class="gmail_attr">On Mon, Apr 6, 2026 at 9:00 AM <a href="mailto:bob@example.com">Bob Davis</a> wrote:</div>
+  <blockquote class="gmail_quote">The project is on track for the April 30 deadline.</blockquote>
+  <div class="gmail_attr">On Mon, Apr 6, 2026 at 9:00 AM <a href="mailto:bob@example.com">Bob Davis</a> wrote:</div>
+  <blockquote class="gmail_quote">The project is on track for the April 30 deadline.</blockquote>
+</div>

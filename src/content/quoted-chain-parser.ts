@@ -45,6 +45,12 @@ interface Segment {
 
 // ── normalization & hashing ─────────────────────────────────────────────────
 
+const DISCLAIMER_RE = /\s*(?:this e-?mail and any attachments|this message contains information that is confidential|agreements binding|e-mail transmissions are not secure)[\s\S]{0,3000}$/i;
+
+function stripDisclaimer(text: string): string {
+  return text.replace(DISCLAIMER_RE, '').trim();
+}
+
 function normalizeBody(text: string): string {
   return text
     .toLowerCase()
@@ -147,10 +153,11 @@ function parseForwardSection(text: string, depth: number, anchorTimestamp: strin
   if (senderRaw && body) {
     const { name, email } = parseSenderFromText(senderRaw);
     const timestamp = parseTimestampFromText(dateRaw, depth, anchorTimestamp);
-    const hash = hashBody(body);
+    const cleanBody = stripDisclaimer(body);
+    const hash = hashBody(cleanBody);
     const key = dedupKey(email, hash);
     if (!out.has(key)) {
-      out.set(key, { senderEmail: email, senderName: name, timestamp, bodyText: body, bodyHash: hash, depth });
+      out.set(key, { senderEmail: email, senderName: name, timestamp, bodyText: cleanBody, bodyHash: hash, depth });
     }
     // Recursively parse what's inside the forwarded body
     parseOutlookChain(body, depth + 1, anchorTimestamp, out);
@@ -195,7 +202,8 @@ function parseOutlookChain(text: string, depth: number, anchorTimestamp: string,
 
     // Skip the header lines, take the body
     const headerEnd = fullBlock.indexOf('\n\n');
-    const body = headerEnd >= 0 ? fullBlock.slice(headerEnd + 2).trim() : '';
+    const rawBody = headerEnd >= 0 ? fullBlock.slice(headerEnd + 2).trim() : '';
+    const body = stripDisclaimer(rawBody);
     if (!body || body.length < 20) return; // too short to be meaningful
 
     const { name, email } = parseSenderFromText(pos.senderRaw);
@@ -260,7 +268,7 @@ function parseGmailQuotes(latestBodyEl: Element, depth: number, anchorTimestamp:
     const clone = sibling.cloneNode(true) as Element;
     clone.querySelectorAll('.gmail_attr').forEach(el => el.remove());
     clone.querySelectorAll('.gmail_quote').forEach(el => el.remove());
-    const bodyText = htmlToText(clone.innerHTML).trim();
+    const bodyText = stripDisclaimer(htmlToText(clone.innerHTML).trim());
 
     if (!bodyText || bodyText.length < 10) return;
 

@@ -1,0 +1,6 @@
+<div>
+  <div class="gmail_attr">On Mon, Apr 6, 2026 at 2:57 PM <a href="mailto:alice@example.com">Alice Smith</a> wrote:</div>
+  <blockquote class="gmail_quote">
+    Hi Bob, can you review the proposal by Friday?
+  </blockquote>
+</div>
