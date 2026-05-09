@@ -104,6 +104,66 @@ export function stripQuotedText(bodyEl: Element): { body: string; quotedText: st
   return { body, quotedText };
 }
 
+export function mimeFromExtension(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  const map: Record<string, string> = {
+    pdf: 'application/pdf', doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    txt: 'text/plain', csv: 'text/csv', zip: 'application/zip',
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  };
+  return map[ext] ?? 'application/octet-stream';
+}
+
+const ALLOWED_TAGS = new Set(['p','div','br','b','i','strong','em','u','s','a','ul','ol','li',
+  'table','tr','td','th','thead','tbody','tfoot','pre','code','blockquote','span',
+  'h1','h2','h3','h4','h5','h6','hr']);
+
+export function sanitizeEmailHtml(html: string): string {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+
+  function clean(node: Element): void {
+    const children = Array.from(node.childNodes);
+    for (const child of children) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child as Element;
+        const tag = el.tagName.toLowerCase();
+        if (!ALLOWED_TAGS.has(tag)) {
+          // Replace disallowed tag with its text content
+          const text = document.createTextNode(el.textContent ?? '');
+          node.replaceChild(text, el);
+          continue;
+        }
+        // Strip all event handlers and dangerous attributes
+        for (const attr of Array.from(el.attributes)) {
+          if (attr.name.startsWith('on') || attr.name === 'src' ||
+              attr.name === 'action' || attr.name === 'formaction') {
+            el.removeAttribute(attr.name);
+          }
+        }
+        // For <a>: only allow safe href
+        if (tag === 'a') {
+          const href = el.getAttribute('href') ?? '';
+          if (!href.startsWith('mailto:') && !href.startsWith('https://mail.google.com/')) {
+            el.removeAttribute('href');
+          }
+          // Keep only href, remove everything else
+          for (const attr of Array.from(el.attributes)) {
+            if (attr.name !== 'href') el.removeAttribute(attr.name);
+          }
+        }
+        clean(el);
+      }
+    }
+  }
+
+  clean(tmp);
+  return tmp.innerHTML;
+}
+
 export function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
   let timer: ReturnType<typeof setTimeout>;
   return ((...args: unknown[]) => {

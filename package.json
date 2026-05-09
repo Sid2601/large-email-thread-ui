@@ -10,7 +10,8 @@
     "version:minor": "npm version minor --no-git-tag-version",
     "version:major": "npm version major --no-git-tag-version",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "icons": "node scripts/generate-icons.js"
   },
   "dependencies": {
     "react": "^18.3.0",
@@ -26,6 +27,7 @@
     "autoprefixer": "^10.4.19",
     "happy-dom": "^20.9.0",
     "postcss": "^8.4.38",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.4",
     "type-fest": "^5.6.0",
     "typescript": "^5.5.0",
