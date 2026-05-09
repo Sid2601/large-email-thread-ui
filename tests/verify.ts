@@ -310,3 +310,52 @@ describe('10 — Long 5-message nested Gmail thread', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T11 — Live Gmail Test Case
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('11 — Live Gmail complex thread', () => {
+  const text = fixture('11-live-gmail-test.txt');
+  const messages = parseQuotedChain(makePlainTextElement(text), USER_EMAIL, THREAD_ID, ANCHOR);
+
+  it('extracts multiple messages from the complex chain', () => {
+    // Should find Harj's message and Ashutosh's forwarded message
+    expect(messages.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('finds Harj Lasher as a sender', () => {
+    expect(messages.some(m => m.sender.email === 'harj.lasher@abc.com')).toBe(true);
+  });
+
+  it('finds Ashutosh Bhargava as a sender from the Outlook-style block', () => {
+    expect(messages.some(m => m.sender.email === 'ashutosh.bhargava@abc.co.uk')).toBe(true);
+  });
+
+  it('preserves table-like structure in text if possible', () => {
+    const ashutoshMsg = messages.find(m => m.sender.email === 'ashutosh.bhargava@abc.co.uk' && m.body.includes('WarehouseGIToFaulty'));
+    expect(ashutoshMsg?.body).toContain('WarehouseGIToFaulty');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T12 — Deeply Nested Multi-Format
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('12 — Deeply nested multi-format thread', () => {
+  const text = fixture('12-deeply-nested.txt');
+  const messages = parseQuotedChain(makePlainTextElement(text), USER_EMAIL, THREAD_ID, ANCHOR);
+
+  it('extracts all 3 historical messages (Forward -> Outlook -> Gmail Text)', () => {
+    expect(messages.length).toBe(3);
+  });
+
+  it('identifies Harj Lasher twice (one in forward, one in gmail text)', () => {
+    const harjMsgs = messages.filter(m => m.sender.email === 'harj.lasher@abc.com');
+    expect(harjMsgs.length).toBe(2);
+  });
+
+  it('identifies Jon Brittle from the Outlook segment', () => {
+    expect(messages.some(m => m.sender.email === 'jon.brittle@abc.com')).toBe(true);
+  });
+});

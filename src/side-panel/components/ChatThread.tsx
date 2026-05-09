@@ -24,7 +24,7 @@ export const ChatThread = forwardRef<HTMLDivElement, ChatThreadProps>(
     }
 
     return (
-      <div ref={ref} className="flex-1 overflow-y-auto py-3 bg-gray-50 dark:bg-gray-900">
+      <div ref={ref} className="flex-1 overflow-y-auto py-3 chat-container bg-gray-50 dark:bg-gray-900">
         {messages.map((msg, i) => {
           const prev = messages[i - 1];
           const showSenderName = !msg.isCurrentUser && (

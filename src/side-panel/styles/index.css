@@ -3,10 +3,97 @@
 @tailwind utilities;
 
 * { box-sizing: border-box; }
-body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
 
-.email-body table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
-.email-body td, .email-body th { border: 1px solid #e5e7eb; padding: 4px 6px; }
-.email-body a { color: #2563eb; text-decoration: underline; }
-.email-body pre, .email-body code { font-family: monospace; font-size: 0.8rem; background: #f3f4f6; border-radius: 3px; padding: 0 3px; }
-.email-body blockquote { border-left: 3px solid #e5e7eb; padding-left: 8px; color: #6b7280; margin: 4px 0; }
+/* Custom scrollbar for better look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 10px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Rich Email Content Styling */
+.email-body {
+  line-height: 1.6;
+}
+
+.email-body table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+  margin: 12px 0;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.email-body td, .email-body th {
+  border: 1px solid #e5e7eb;
+  padding: 8px 10px;
+}
+
+.dark .email-body td, .dark .email-body th {
+  border-color: #374151;
+}
+
+.email-body a {
+  color: #3b82f6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.email-body pre, .email-body code {
+  font-family: 'Fira Code', 'Roboto Mono', monospace;
+  font-size: 0.8rem;
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.dark .email-body pre, .dark .email-body code {
+  background: #1f2937;
+}
+
+.email-body blockquote {
+  border-left: 4px solid #e5e7eb;
+  padding-left: 12px;
+  color: #6b7280;
+  margin: 8px 0;
+  font-style: italic;
+}
+
+.dark .email-body blockquote {
+  border-left-color: #4b5563;
+  color: #9ca3af;
+}
+
+/* Smooth transitions for interactive elements */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
+
+/* Chat thread background */
+.chat-container {
+  background-image: radial-gradient(circle at 2px 2px, #e5e7eb 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+.dark .chat-container {
+  background-image: radial-gradient(circle at 2px 2px, #1f2937 1px, transparent 0);
+}

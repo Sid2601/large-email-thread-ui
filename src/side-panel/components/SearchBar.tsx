@@ -21,31 +21,31 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
     }, [onChange, ref]);
 
     return (
-      <div className="px-3 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-400 text-sm">🔍</span>
+      <div className="px-3 py-2 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm border-b border-gray-100 dark:border-gray-800 shrink-0">
+        <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-900 px-2 py-1.5 rounded-lg border border-transparent focus-within:border-blue-400 focus-within:bg-white dark:focus-within:bg-gray-950 transition-all">
+          <span className="text-gray-400 text-xs">🔍</span>
           <input
             ref={ref}
             type="text"
             value={query}
             onChange={e => onChange(e.target.value)}
-            placeholder="Search messages… (Ctrl+F)"
-            className="flex-1 text-sm bg-transparent outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500"
+            placeholder="Search thread..."
+            className="flex-1 text-sm bg-transparent outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 font-medium"
           />
           {query && (
-            <>
+            <div className="flex items-center gap-2">
               {resultCount !== undefined && (
-                <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
-                  {resultCount} result{resultCount !== 1 ? 's' : ''}
+                <span className="text-[10px] font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded-full shrink-0">
+                  {resultCount}
                 </span>
               )}
               <button
                 onClick={() => onChange('')}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm shrink-0"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
               >
-                ✕
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
-            </>
+            </div>
           )}
         </div>
       </div>

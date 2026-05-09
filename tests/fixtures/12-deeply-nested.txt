@@ -1,0 +1,25 @@
+This is the top level message.
+
+---------- Forwarded message ---------
+From: Harj Lasher <harj.lasher@abc.com>
+Date: Tue, 5 May 2026, 12:07
+Subject: RE: Nested Forward
+To: Ashutosh Bhargava <ashutosh.bhargava@abc.co.uk>
+
+Hi Ashutosh,
+
+See the chain below from Outlook.
+
+From: Jon Brittle <jon.brittle@abc.com>
+Sent: 01 May 2026 14:50
+To: Harj Lasher <harj.lasher@abc.com>
+Subject: RE: Outlook Part
+
+I am replying from Outlook.
+
+On Fri, 1 May 2026 at 06:32, Harj Lasher <harj.lasher@abc.com> wrote:
+
+This was originally a Gmail message that Jon replied to from Outlook.
+
+Kind regards,
+Harj

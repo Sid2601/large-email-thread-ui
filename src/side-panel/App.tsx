@@ -26,8 +26,8 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
-        <span className="text-sm font-semibold text-blue-600">ThreadLens</span>
+      <div className="flex items-center gap-2 px-3 py-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md sticky top-0 z-10 border-b border-gray-200 dark:border-gray-700 shrink-0">
+        <span className="text-sm font-bold text-blue-600 tracking-tight">ThreadLens</span>
         {threadData && (
           <span className="text-xs text-gray-400 dark:text-gray-500 truncate">
             {threadData.messages.length} messages
