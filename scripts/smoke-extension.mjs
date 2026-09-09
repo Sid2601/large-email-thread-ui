@@ -1,0 +1,127 @@
+/** Real Chromium smoke test. Set PLAYWRIGHT_MODULE to a Playwright module path if needed. */
+import { mkdtemp, rm, mkdir, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import assert from 'node:assert/strict';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const profile = await mkdtemp(join(tmpdir(), 'threadlens-smoke-'));
+const extension = resolve('dist');
+assert.doesNotMatch(await readFile(join(extension, 'src/side-panel/index.html'), 'utf8'), /modulepreload/i, 'built panel must not preload cross-world shared extension modules');
+const context = await chromium.launchPersistentContext(profile, {
+  channel: 'chromium', headless: true, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+});
+try {
+  const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+  const id = new URL(worker.url()).host;
+  const errors = [];
+  context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
+  const attribution = (name, when, body) => `<div class="gmail_attr">On ${when} <a href="mailto:${name.toLowerCase()}@example.com">${name}</a> wrote:</div><blockquote class="gmail_quote">${body}</blockquote>`;
+  const quote = (name, date, body) => attribution(name, `${date} at 10:00 AM UTC`, body);
+  // A replying client in another country writes its own wall clock with no
+  // offset, so Carol's quoted copy must still reconcile with her real header.
+  const carolSentAt = Date.parse('2026-09-08T10:00:00Z');
+  const pad = value => String(value).padStart(2, '0');
+  const localClock = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const carolBody = '<p>Adding you for visibility.</p><p>The rollout covers the northern region first, and the budget table below is the version finance agreed last week. Please raise anything that looks wrong before Friday.</p>';
+  const history = quote('Alice', 'Sep 7, 2026', '<p>Budget approved.</p><table><tr><th>Item</th><th>Budget</th></tr><tr><td>Hosting</td><td>$500</td></tr></table>' + quote('Bob', 'Sep 6, 2026', '<p>Initial proposal.</p>'));
+  const html = `<main role="main"><span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Enterprise rollout · joined midway</h2><div data-message-id="direct-1"><span class="gD" email="carol@example.com" name="Carol">Carol</span><span class="g2" email="new@example.com"></span><span class="g3" data-tooltip="Sep 8, 10:00 AM UTC"></span><div class="a3s aiL">${carolBody}<div hidden style="display:none">${history}</div></div><div class="aZo" data-tooltip="report.txt"><span class="aV3">report.txt</span><span class="aV7">12 B</span><a href="https://mail.google.com/mail/u/0/?view=att&amp;attid=1">Download</a></div></div><div data-message-id="direct-2"><span class="gD" email="dave@example.com" name="Dave">Dave</span><span class="g3" data-tooltip="2026-09-09T10:00:00Z"></span><div class="a3s aiL"><p>OK</p>${attribution('Carol', localClock(carolSentAt - 4.5 * 3600 * 1000), carolBody + history)}</div></div></main>`;
+  await context.route('https://mail.google.com/**', route => route.fulfill(route.request().url().includes('view=att') ? { contentType: 'text/plain', body: 'Report data' } : { contentType: 'text/html; charset=utf-8', body: html }));
+  const mail = await context.newPage();
+  await mail.goto('https://mail.google.com/mail/u/0/#inbox/testthread123456');
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  const saved = await worker.evaluate(async () => chrome.storage.session.get(null));
+  const entry = Object.entries(saved).find(([key]) => key.startsWith('thread:'));
+  assert.ok(entry, 'content script delivers a thread to the real service worker');
+  assert.equal(entry[1].messages.length, 4, 'a quoted copy written in another timezone must not become a fifth message');
+  assert.equal(entry[1].messages[0].body, 'Initial proposal.');
+  assert.equal(entry[1].messages[2].timestamp, new Date(carolSentAt).toISOString(), 'the provider header wins over a zoneless quoted clock');
+  const mailTabId = Number(entry[0].split(':')[1]);
+  const panel = await context.newPage();
+  const panelLogs = [];
+  const cdp = await context.newCDPSession(panel);
+  await cdp.send('Log.enable');
+  cdp.on('Log.entryAdded', ({ entry }) => panelLogs.push(entry.text));
+  await panel.setViewportSize({ width: 440, height: 1000 });
+  await panel.goto(`chrome-extension://${id}/src/side-panel/index.html`);
+  await worker.evaluate(tabId => chrome.tabs.update(tabId, { active: true }), mailTabId);
+  await panel.getByText('4 messages', { exact: true }).waitFor();
+  assert.equal(await panel.locator('table').count(), 1);
+  await panel.getByText('You joined here · first visible inclusion', { exact: true }).waitFor();
+  assert.equal(await panel.getByText('Initial proposal.', { exact: true }).count(), 1);
+  await panel.locator('input[type="text"], input[type="search"]').fill('Hosting');
+  assert.equal(await panel.locator('table mark').innerText(), 'Hosting');
+  const [conversation] = await Promise.all([
+    panel.waitForEvent('download'),
+    panel.getByRole('button', { name: 'Download conversation (.html)' }).click(),
+  ]);
+  assert.ok(conversation.suggestedFilename().endsWith('.html'));
+  await mkdir('artifacts', { recursive: true });
+  const exportPath = resolve('artifacts/conversation-export.html');
+  await conversation.saveAs(exportPath);
+  const exported = await readFile(exportPath, 'utf8');
+  assert.equal((exported.match(/<article /g) || []).length, 4, 'export includes all messages despite active search');
+  assert.equal((exported.match(/Adding you for visibility/g) || []).length, 1, 'the timezone-shifted duplicate is exported once');
+  assert.ok(exported.includes('report.txt'));
+  assert.ok(exported.includes('<table>'));
+  assert.ok(!exported.includes('view=att'), 'provider attachment URLs are not exported');
+  await panel.locator('input[type="text"], input[type="search"]').fill('');
+  await panel.getByText('Save locally', { exact: true }).click();
+  await panel.getByText('Saved on this device', { exact: true }).waitFor();
+  await panel.getByText('Remove local copy', { exact: true }).click();
+  await panel.getByText('Choose downloaded file', { exact: true }).waitFor();
+  await panel.locator('input[type="file"]').setInputFiles({ name: 'report.txt', mimeType: 'text/plain', buffer: Buffer.from('Report data') });
+  await panel.getByText('Saved on this device', { exact: true }).waitFor();
+  // Reload proves IndexedDB persistence rather than component-only state.
+  await panel.reload();
+  await panel.getByText('Saved on this device', { exact: true }).waitFor();
+  const [download] = await Promise.all([panel.waitForEvent('download'), panel.getByText('Download saved file', { exact: true }).click()]);
+  assert.equal(download.suggestedFilename(), 'report.txt');
+  await panel.getByText('Remove local copy', { exact: true }).click();
+  await panel.getByText('Choose downloaded file', { exact: true }).waitFor();
+  assert.equal(await panel.getByText('Saved on this device', { exact: true }).count(), 0);
+  await mkdir('artifacts', { recursive: true });
+  await panel.screenshot({ path: 'artifacts/threadlens-smoke.png', fullPage: true });
+  const unrelated = await context.newPage();
+  await unrelated.goto('about:blank');
+  await panel.getByText('4 messages', { exact: true }).waitFor({ state: 'detached' });
+  await worker.evaluate(tabId => chrome.tabs.update(tabId, { active: true }), mailTabId);
+  await panel.getByText('4 messages', { exact: true }).waitFor();
+  // Reproduce the reported near-duplicate with synthetic wording, a missing
+  // year in the direct header, and a changed signature inside a quoted copy.
+  const request = 'Can you send the opening position for on-order and in-transit stock by purchase order to ensure we are all aligned? Please include the reconciliation details and confirm when the final data will be available for review.';
+  const variant = request.replace('by purchase order', 'by purchase order for Riverside North');
+  const markup = `<span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Enterprise duplicate regression</h2><div data-message-id="original"><span class="gD" email="alex@example.com" name="Alex">Alex</span><span class="g3" data-tooltip="Sep 8, 10:00 AM UTC"></span><div class="a3s aiL"><p>${request}</p><p>Many thanks</p><p>Alex</p></div></div><div data-message-id="joined"><span class="gD" email="lee@example.com" name="Lee">Lee</span><span class="g2" email="new@example.com"></span><span class="g3" data-tooltip="2026-09-09T10:00:00Z"></span><div class="a3s aiL"><p>Adding you to the discussion.</p>${quote('Alex', 'Sep 8, 2026', `<p>${variant}</p><p>Many thanks</p><p>Alex</p><p>Updated signature</p>`)}</div></div>`;
+  await mail.evaluate(markup => { document.querySelector('main').innerHTML = markup; location.hash = '#inbox/duplicatethread123'; }, markup);
+  await panel.getByText('2 messages', { exact: true }).waitFor();
+  await panel.getByText('Quoted copy differs (1)', { exact: true }).click();
+  await panel.getByText('You joined here · first visible inclusion', { exact: true }).waitFor();
+  assert.ok(await panel.getByText('Updated signature', { exact: true }).isVisible());
+  const [deduplicatedExport] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name: 'Download conversation (.html)' }).click()]);
+  const deduplicatedPath = resolve('artifacts/enterprise-export.html');
+  await deduplicatedExport.saveAs(deduplicatedPath);
+  const deduplicatedHtml = await readFile(deduplicatedPath, 'utf8');
+  assert.equal((deduplicatedHtml.match(/<article /g) || []).length, 2);
+  assert.ok(deduplicatedHtml.includes('Riverside North'));
+  assert.ok(!deduplicatedHtml.includes('2001'));
+  await panel.screenshot({ path: 'artifacts/enterprise-regression.png', fullPage: true });
+  // A forward without an introduction still records the receiving envelope,
+  // enabling an inclusion marker without repeating the forwarded message body.
+  const forwardOnly = markup.slice(markup.indexOf('<div data-message-id="joined">')).replace('<p>Adding you to the discussion.</p>', '');
+  await mail.evaluate(markup => { document.querySelector('main').innerHTML = '<span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Forward only</h2>' + markup; location.hash = '#inbox/forwardonly123'; }, forwardOnly);
+  await panel.getByText('Forward only', { exact: true }).waitFor();
+  await panel.getByText('This email contains only quoted history, shown separately above.', { exact: true }).waitFor();
+  await panel.getByText('You joined here · first visible inclusion', { exact: true }).waitFor();
+  // Inbox navigation must clear mail rather than leaving stale content visible.
+  await mail.evaluate(() => { location.hash = '#inbox'; });
+  await panel.getByText('2 messages', { exact: true }).waitFor({ state: 'detached' });
+  const exportedPage = await context.newPage();
+  await exportedPage.goto(pathToFileURL(exportPath).href);
+  assert.equal(await exportedPage.locator('article').count(), 4);
+  assert.equal(await exportedPage.locator('table').count(), 1);
+  await exportedPage.setViewportSize({ width: 1000, height: 1100 });
+  await exportedPage.screenshot({ path: 'artifacts/conversation-export.png', fullPage: true });
+  assert.deepEqual(errors, []);
+  assert.ok(!panelLogs.some(text => text.includes('cross-world extension resource mismatch')), 'no cross-world preload warnings');
+  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone full-conversation export during search, table, rich search, local file save/reload/download/remove, navigation clearing; no page errors or cross-world preload warnings.');
+} finally { await context.close(); await rm(profile, { recursive: true, force: true }); }

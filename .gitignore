@@ -17,3 +17,11 @@ dist/
 # Env
 .env
 .env.local
+
+# Keep project reference documents under version control.
+!README.md
+!CONTEXT.md
+
+# Generated local distribution archive
+releases/
+!TEST_COVERAGE.md

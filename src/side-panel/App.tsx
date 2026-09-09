@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useThreadData } from './hooks/useThreadData';
 import { useParticipantFilter } from './hooks/useParticipantFilter';
 import { useSearch } from './hooks/useSearch';
@@ -7,12 +7,17 @@ import { ChatThread } from './components/ChatThread';
 import { SearchBar } from './components/SearchBar';
 import { ParticipantSidebar } from './components/ParticipantSidebar';
 import { LoadingState } from './components/LoadingState';
+import { downloadConversation } from './export/conversation';
 import { EmptyState } from './components/EmptyState';
 
 export default function App() {
   const { threadData, isLoading } = useThreadData();
+  const [exportError, setExportError] = useState('');
+  useEffect(() => setExportError(''), [threadData?.threadId]);
   const { selectedEmail, selectSender, filteredMessages: participantFiltered } = useParticipantFilter(threadData);
   const { query, setQuery, filteredMessages: searchedMessages } = useSearch(participantFiltered);
+
+  useEffect(() => setQuery(''), [threadData?.threadId, setQuery]);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -42,6 +47,21 @@ export default function App() {
         <EmptyState />
       ) : (
         <>
+          <div className="px-3 py-2 border-b text-xs text-gray-500">
+            <p className="font-semibold text-gray-800 dark:text-gray-100">{threadData.subject}</p>
+            <button
+              type="button"
+              className="mt-2 mb-1 rounded border border-blue-200 dark:border-blue-800 px-2 py-1.5 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-50 dark:hover:bg-gray-800"
+              title="Download all recovered messages as one HTML file, including formatting and attachment names. Attachment files are downloaded separately."
+              onClick={() => {
+                setExportError('');
+                try { downloadConversation(threadData); }
+                catch { setExportError('Could not export the conversation. Please try again.'); }
+              }}
+            >↓ Download conversation (.html)</button>
+            {exportError && <p role="alert" className="text-red-600">{exportError}</p>}
+            <p className="mt-1">Includes history quoted in the emails available here. Earlier messages or files omitted by the sender cannot be recovered.</p>
+          </div>
           <ParticipantSidebar
             participants={threadData.participants}
             selectedEmail={selectedEmail}
@@ -53,7 +73,7 @@ export default function App() {
             onChange={setQuery}
             resultCount={query ? searchedMessages.length : undefined}
           />
-          <ChatThread ref={scrollRef} messages={searchedMessages} searchQuery={query} />
+          <ChatThread participation={threadData.participation} ref={scrollRef} messages={searchedMessages} searchQuery={query} />
         </>
       )}
 

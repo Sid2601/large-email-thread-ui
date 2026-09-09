@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { ThreadData, ParsedMessage } from '../../types';
 
 export function useParticipantFilter(threadData: ThreadData | null) {
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+
+  useEffect(() => setSelectedEmail(null), [threadData?.threadId]);
 
   const filteredMessages = useMemo((): ParsedMessage[] => {
     if (!threadData) return [];

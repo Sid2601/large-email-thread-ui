@@ -1,4 +1,5 @@
 import type { ParsedMessage, Attachment } from '../../types';
+import { highlightedEmailHtml } from './email-markup';
 import { QuotedText } from './QuotedText';
 import { AttachmentChip } from './AttachmentChip';
 
@@ -6,6 +7,17 @@ interface Props {
   message: ParsedMessage;
   showSenderName: boolean;
   searchQuery?: string;
+}
+
+function QuotedVariants({ message, query }: { message: ParsedMessage; query: string }) {
+  if (!message.quotedVariants?.length) return null;
+  return <details className="mt-2 border-t pt-2 text-xs">
+    <summary className="cursor-pointer">Quoted copy differs ({message.quotedVariants.length})</summary>
+    <p className="my-1">A likely repeated quote has different wording. The copy is preserved here for comparison.</p>
+    {message.quotedVariants.map((variant, index) => <div key={index} className="email-body mt-2 border-t pt-2">
+      {variant.bodyHtml ? <div dangerouslySetInnerHTML={{ __html: highlightedEmailHtml(variant.bodyHtml, query) }} /> : <p className="whitespace-pre-wrap">{variant.body}</p>}
+    </div>)}
+  </details>;
 }
 
 function highlightText(text: string, query: string): React.ReactNode {
@@ -23,12 +35,18 @@ export function MessageBubble({ message, showSenderName, searchQuery = '' }: Pro
   const { sender, body, quotedText, timestamp, isCurrentUser } = message;
 
   const time = (() => {
+    if (message.timestampEstimated) return 'Time unavailable · approximate order';
     try {
-      return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return new Date(timestamp).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     } catch {
       return '';
     }
   })();
+  // No provider header was available for this copy, only a quoted clock written
+  // without an offset, so say so rather than presenting it as exact.
+  const timeHint = message.timestampZoneUnknown && !message.timestampEstimated
+    ? 'Read from quoted text, which records no timezone. This can be offset from the original send time.'
+    : undefined;
 
   if (isCurrentUser) {
     return (
@@ -36,19 +54,20 @@ export function MessageBubble({ message, showSenderName, searchQuery = '' }: Pro
         <div className="max-w-[80%]">
           <div className="bg-blue-500 text-white rounded-2xl rounded-tr-sm px-3 py-2 text-sm">
             {message.bodyHtml
-              ? <div className="text-sm email-body" dangerouslySetInnerHTML={{ __html: message.bodyHtml }} />
+              ? <div className="text-sm email-body" dangerouslySetInnerHTML={{ __html: highlightedEmailHtml(message.bodyHtml, searchQuery) }} />
               : <p className="whitespace-pre-wrap break-words">{highlightText(body, searchQuery)}</p>
             }
             {quotedText && <QuotedText text={quotedText} />}
+          <QuotedVariants message={message} query={searchQuery} />
           </div>
           {message.attachments && message.attachments.length > 0 && (
             <div className="mt-2 flex flex-col gap-1">
               {message.attachments.map((att: Attachment, i: number) => (
-                <AttachmentChip key={i} attachment={att} />
+                <AttachmentChip key={i} attachment={att} messageId={message.id} />
               ))}
             </div>
           )}
-          <p className="text-right text-xs text-gray-400 dark:text-gray-500 mt-0.5 pr-1">{time}</p>
+          <p title={timeHint} className="text-right text-xs text-gray-400 dark:text-gray-500 mt-0.5 pr-1">{message.source === 'quoted' ? 'From quoted history · ' : ''}{time}</p>
         </div>
       </div>
     );
@@ -68,19 +87,20 @@ export function MessageBubble({ message, showSenderName, searchQuery = '' }: Pro
         )}
         <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-tl-sm px-3 py-2 text-sm shadow-sm border border-gray-100 dark:border-gray-700">
           {message.bodyHtml
-            ? <div className="text-sm email-body" dangerouslySetInnerHTML={{ __html: message.bodyHtml }} />
+            ? <div className="text-sm email-body" dangerouslySetInnerHTML={{ __html: highlightedEmailHtml(message.bodyHtml, searchQuery) }} />
             : <p className="whitespace-pre-wrap break-words">{highlightText(body, searchQuery)}</p>
           }
           {quotedText && <QuotedText text={quotedText} />}
+          <QuotedVariants message={message} query={searchQuery} />
         </div>
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-2 flex flex-col gap-1">
             {message.attachments.map((att: Attachment, i: number) => (
-              <AttachmentChip key={i} attachment={att} />
+              <AttachmentChip key={i} attachment={att} messageId={message.id} />
             ))}
           </div>
         )}
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 ml-1">{time}</p>
+        <p title={timeHint} className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 ml-1">{message.source === 'quoted' ? 'From quoted history · ' : ''}{time}</p>
       </div>
     </div>
   );

@@ -4,37 +4,32 @@ import type { ThreadData, ExtensionMessage } from '../../types';
 export function useThreadData() {
   const [threadData, setThreadData] = useState<ThreadData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
   useEffect(() => {
-    // Load from storage on mount (handles case where panel opens after scrape)
-    chrome.storage.local.get(['currentThread'], (result) => {
-      if (result.currentThread) setThreadData(result.currentThread as ThreadData);
-      setIsLoading(false);
-    });
-
-    // Listen for live updates from service worker
+    let active = true, tabId: number | undefined, revision = 0;
+    async function refresh() {
+      const version = ++revision;
+      setThreadData(null); setIsLoading(true);
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        if (!active || revision !== version) return;
+        tabId = tab?.id;
+        const response: ExtensionMessage | null = await chrome.runtime.sendMessage({ type: 'REQUEST_THREAD' });
+        if (active && revision === version) setThreadData(response?.type === 'THREAD_UPDATED' && response.tabId === tabId ? response.data : null);
+      } finally { if (active && revision === version) setIsLoading(false); }
+    }
     const listener = (message: ExtensionMessage) => {
-      if (message.type === 'THREAD_UPDATED') {
-        setThreadData(message.data);
+      if (!active) return;
+      if ((message.type === 'THREAD_UPDATED' || message.type === 'THREAD_CLEARED') && message.tabId === tabId) {
+        revision++;
+        setThreadData(message.type === 'THREAD_UPDATED' ? message.data : null);
         setIsLoading(false);
       }
     };
+    const activate = () => { void refresh().catch(() => setIsLoading(false)); };
     chrome.runtime.onMessage.addListener(listener);
-
-    // Ask service worker for current thread (in case we opened late).
-    // Storage read on mount already covers the common case; this catches the
-    // race where the panel opens between scrape and storage write.
-    chrome.runtime.sendMessage({ type: 'REQUEST_THREAD' } satisfies ExtensionMessage)
-      .then((response: ExtensionMessage | null) => {
-        if (response?.type === 'THREAD_UPDATED') {
-          setThreadData(response.data);
-          setIsLoading(false);
-        }
-      })
-      .catch(() => {});
-
-    return () => chrome.runtime.onMessage.removeListener(listener);
+    chrome.tabs.onActivated.addListener(activate);
+    activate();
+    return () => { active = false; chrome.runtime.onMessage.removeListener(listener); chrome.tabs.onActivated.removeListener(activate); };
   }, []);
-
   return { threadData, isLoading };
 }

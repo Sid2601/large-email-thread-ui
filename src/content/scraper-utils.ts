@@ -48,6 +48,8 @@ export function htmlToText(html: string): string {
   const processed = html
     // Block elements → double newline (paragraph break)
     .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/(?:td|th)>/gi, '\t')
     .replace(/<\/h[1-6]>/gi, '\n\n')
     .replace(/<\/blockquote>/gi, '\n')
     // Line breaks → single newline
@@ -121,46 +123,44 @@ const ALLOWED_TAGS = new Set(['p','div','br','b','i','strong','em','u','s','a','
   'table','tr','td','th','thead','tbody','tfoot','pre','code','blockquote','span',
   'h1','h2','h3','h4','h5','h6','hr']);
 
+const STYLE_PROPERTIES = new Set(['color', 'background-color', 'font-weight', 'font-style',
+  'text-decoration', 'text-align', 'vertical-align', 'white-space', 'border', 'border-color',
+  'border-width', 'border-style', 'padding', 'padding-left', 'padding-right', 'padding-top', 'padding-bottom']);
+
+export function safeLink(raw: string): string {
+  try {
+    const url = new URL(raw);
+    return ['https:', 'http:', 'mailto:'].includes(url.protocol) ? url.href : '';
+  } catch { return ''; }
+}
+
 export function sanitizeEmailHtml(html: string): string {
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
-
-  function clean(node: Element): void {
-    const children = Array.from(node.childNodes);
-    for (const child of children) {
-      if (child.nodeType === Node.ELEMENT_NODE) {
-        const el = child as Element;
-        const tag = el.tagName.toLowerCase();
-        if (!ALLOWED_TAGS.has(tag)) {
-          // Replace disallowed tag with its text content
-          const text = document.createTextNode(el.textContent ?? '');
-          node.replaceChild(text, el);
-          continue;
-        }
-        // Strip all event handlers and dangerous attributes
-        for (const attr of Array.from(el.attributes)) {
-          if (attr.name.startsWith('on') || attr.name === 'src' ||
-              attr.name === 'action' || attr.name === 'formaction') {
-            el.removeAttribute(attr.name);
-          }
-        }
-        // For <a>: only allow safe href
-        if (tag === 'a') {
-          const href = el.getAttribute('href') ?? '';
-          if (!href.startsWith('mailto:') && !href.startsWith('https://mail.google.com/')) {
-            el.removeAttribute('href');
-          }
-          // Keep only href, remove everything else
-          for (const attr of Array.from(el.attributes)) {
-            if (attr.name !== 'href') el.removeAttribute(attr.name);
-          }
-        }
-        clean(el);
-      }
+  tmp.querySelectorAll('script,style,iframe,object,embed,form,input,button,link,meta,svg,math').forEach(el => el.remove());
+  for (const el of Array.from(tmp.querySelectorAll('*')).reverse()) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'img') {
+      el.replaceWith(document.createTextNode(el.getAttribute('alt') ? `[Image: ${el.getAttribute('alt')}]` : '[Image]'));
+      continue;
     }
+    if (!ALLOWED_TAGS.has(tag)) { el.replaceWith(...Array.from(el.childNodes)); continue; }
+    const href = tag === 'a' ? safeLink(el.getAttribute('href') ?? '') : '';
+    const styles: string[] = [];
+    const style = (el as HTMLElement).style;
+    for (let i = 0; i < style.length; i++) {
+      const prop = style[i];
+      const value = style.getPropertyValue(prop);
+      if (STYLE_PROPERTIES.has(prop) && !/url|expression|var\(|@|[<>\\]/i.test(value)) styles.push(`${prop}:${value}`);
+    }
+    const spans = ['td', 'th'].includes(tag) ? ['colspan', 'rowspan'].map(attr => [attr, el.getAttribute(attr)]) : [];
+    const start = tag === 'ol' ? el.getAttribute('start') : null;
+    for (const attr of Array.from(el.attributes)) el.removeAttribute(attr.name);
+    if (styles.length) el.setAttribute('style', styles.join(';'));
+    for (const [attr, value] of spans) if (value && /^\d{1,3}$/.test(value)) el.setAttribute(attr!, value);
+    if (start && /^-?\d{1,5}$/.test(start)) el.setAttribute('start', start);
+    if (href) { el.setAttribute('href', href); el.setAttribute('target', '_blank'); el.setAttribute('rel', 'noopener noreferrer'); }
   }
-
-  clean(tmp);
   return tmp.innerHTML;
 }
 

@@ -22,6 +22,13 @@ export interface ParsedMessage {
   index: number;
   attachments?: Attachment[];
   bodyHtml?: string;
+  source?: 'direct' | 'quoted';
+  timestampEstimated?: boolean;
+  /** Wall clock taken from quoted text with no offset; the instant may be shifted by a whole timezone. */
+  timestampZoneUnknown?: boolean;
+  recipients?: string[];
+  historyCarrier?: boolean;
+  quotedVariants?: { body: string; bodyHtml?: string }[];
 }
 
 export interface Participant {
@@ -37,11 +44,15 @@ export interface ThreadData {
   scrapedAt: string;
   messages: ParsedMessage[];
   participants: Participant[];
+  currentUserEmail?: string;
+  participation?: { messageId: string; kind: 'recipient' | 'authored' | 'available'; title: string; detail: string };
 }
 
 export type ExtensionMessage =
   | { type: 'THREAD_PARSED'; data: ThreadData }
-  | { type: 'THREAD_UPDATED'; data: ThreadData }
+  | { type: 'THREAD_UPDATED'; data: ThreadData; tabId?: number }
+  | { type: 'CLEAR_THREAD' }
+  | { type: 'THREAD_CLEARED'; tabId: number }
   | { type: 'REQUEST_THREAD' }
   | { type: 'SCRAPE_THREAD' }
   | { type: 'SIDE_PANEL_READY' };
