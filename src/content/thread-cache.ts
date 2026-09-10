@@ -1,13 +1,13 @@
+import { mergeMessages, participationBoundary } from './message-reconciliation';
 import type { ParsedMessage, Participant, ThreadData } from '../types';
 
 interface CacheEntry {
-  // Map key = stable message ID (email + timestamp hash — no DOM index)
+  // Direct provider IDs and stable recovered-message IDs.
   messages: Map<string, ParsedMessage>;
-  // Pre-sorted array, rebuilt only when a new message is inserted
+  // Chronological reconciled messages.
   sortedMessages: ParsedMessage[];
-  // Participant counts maintained incrementally — no full recount on update
+  // Rebuilt after reconciliation to avoid counting quoted duplicates.
   participantMap: Map<string, Participant>;
-  isDirty: boolean;
 }
 
 class ThreadCache {
@@ -19,7 +19,6 @@ class ThreadCache {
         messages: new Map(),
         sortedMessages: [],
         participantMap: new Map(),
-        isDirty: false,
       });
     }
     return this.store.get(threadId)!;
@@ -27,38 +26,25 @@ class ThreadCache {
 
   /**
    * Merge incoming messages into the cache.
-   * Returns true if at least one new message was added (caller should re-send).
-   * O(n) over incoming messages, O(1) per dedup check via Map.
+   * Returns true when bodies, attachments or message identities change.
+   * Recovered duplicates yield to direct messages; quoted-only history survives.
    */
   update(threadId: string, incoming: ParsedMessage[]): boolean {
     const entry = this.getOrCreate(threadId);
     let changed = false;
 
-    for (const msg of incoming) {
-      if (entry.messages.has(msg.id)) continue;
-
-      entry.messages.set(msg.id, msg);
-      changed = true;
-      entry.isDirty = true;
-
-      // Increment participant count without rebuilding the whole participant list
-      const { email } = msg.sender;
-      if (!entry.participantMap.has(email)) {
-        entry.participantMap.set(email, {
-          sender: msg.sender,
-          messageCount: 0,
-          firstSeen: msg.timestamp,
-        });
+    const merged = mergeMessages([...incoming, ...Array.from(entry.messages.values()).filter(old => !incoming.some(m => m.id === old.id))]);
+    changed = JSON.stringify(merged) !== JSON.stringify(entry.sortedMessages);
+    if (changed) {
+      entry.messages = new Map(merged.map(m => [m.id, m]));
+      entry.sortedMessages = merged;
+      entry.participantMap.clear();
+      for (const msg of merged) {
+        const key = msg.sender.email;
+        const participant = entry.participantMap.get(key);
+        if (participant) participant.messageCount++;
+        else entry.participantMap.set(key, { sender: msg.sender, messageCount: 1, firstSeen: msg.timestamp });
       }
-      entry.participantMap.get(email)!.messageCount++;
-    }
-
-    // Sort only when new messages arrived — not on every MutationObserver tick
-    if (entry.isDirty) {
-      entry.sortedMessages = Array.from(entry.messages.values()).sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
-      entry.isDirty = false;
     }
 
     return changed;
@@ -68,6 +54,7 @@ class ThreadCache {
     threadId: string,
     subject: string,
     client: 'gmail' | 'outlook',
+    currentUserEmail = '',
   ): ThreadData | null {
     const entry = this.store.get(threadId);
     if (!entry || entry.sortedMessages.length === 0) return null;
@@ -76,6 +63,8 @@ class ThreadCache {
       threadId,
       subject,
       client,
+      currentUserEmail,
+      participation: participationBoundary(entry.sortedMessages, currentUserEmail),
       scrapedAt: new Date().toISOString(),
       messages: entry.sortedMessages, // already sorted — no extra work
       participants: Array.from(entry.participantMap.values()).sort(

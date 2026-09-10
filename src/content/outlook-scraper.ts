@@ -1,5 +1,7 @@
 import type { ExtensionMessage, ParsedMessage } from '../types';
-import { buildSender, stripHtml, debounce, generateId } from './scraper-utils';
+import { buildSender, debounce, generateId, mimeFromExtension } from './scraper-utils';
+import { readRecipients } from './message-metadata';
+import { extractEmailBody, parseEmailDate } from './quoted-chain-parser';
 import { threadCache } from './thread-cache';
 
 // Set to true only during local development — never commit as true.
@@ -9,16 +11,6 @@ const log = (...args: unknown[]) => { if (DEBUG) console.log('[ThreadLens/Outloo
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-function parseTimestamp(raw: string): string {
-  if (!raw) return new Date().toISOString();
-  try {
-    const parsed = new Date(raw);
-    return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-  } catch {
-    return new Date().toISOString();
-  }
-}
 
 /**
  * Extract name and email from various Outlook title attribute formats:
@@ -135,21 +127,6 @@ const BODY_SELECTORS = [
   '.elementToProof',
 ] as const;
 
-function extractBody(el: Element): string {
-  for (const sel of BODY_SELECTORS) {
-    const bodyEl = el.querySelector<HTMLElement>(sel);
-    if (bodyEl) {
-      const text = stripHtml(bodyEl.innerHTML).trim();
-      if (text) {
-        log(`Body selector matched: ${sel}`);
-        return text;
-      }
-    }
-  }
-  // Last resort: the item element's own text content
-  return el.textContent?.trim() ?? '';
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Current user detection
 // ─────────────────────────────────────────────────────────────────────────────
@@ -201,26 +178,28 @@ function getSubject(): string {
 
 // Track active thread so we can evict stale cache entries on navigation
 let activeThreadId = '';
+let threadAnchor = Date.now();
 
 function scrape(): void {
-  // Outlook attaches data-convid to the focused conversation row OR the reading pane
-  const convEl = document.querySelector<HTMLElement>('[data-convid]');
-  if (!convEl) return;
-
-  const threadId = convEl.getAttribute('data-convid') ?? '';
-  if (!threadId) return;
-
-  // Evict old thread from cache on navigation
-  if (activeThreadId && activeThreadId !== threadId) {
-    threadCache.evict(activeThreadId);
-    log(`Evicted cache for old thread: ${activeThreadId}`);
-  }
-  activeThreadId = threadId;
-
-  // The reading pane may be a sibling/descendant — search from body
   const pane = document.querySelector<HTMLElement>(
-    '[role="region"][aria-label], [data-app-section="ConversationContainer"], [class*="ReadingPane"]'
-  ) ?? document.body;
+    '[data-app-section="ConversationContainer"], [class*="ReadingPane"], [role="region"][aria-label*="Reading" i]'
+  );
+  const convEl = pane?.querySelector<HTMLElement>('[data-convid]') ??
+    (pane?.matches('[data-convid]') ? pane : null) ??
+    document.querySelector<HTMLElement>('[data-convid][aria-selected="true"], [aria-selected="true"] [data-convid]');
+  const threadId = convEl?.getAttribute('data-convid') ?? '';
+  if (!pane || !threadId) {
+    if (activeThreadId) {
+      threadCache.evict(activeThreadId); activeThreadId = '';
+      chrome.runtime.sendMessage({ type: 'CLEAR_THREAD' }).catch(() => {});
+    }
+    return;
+  }
+  if (activeThreadId !== threadId) {
+    threadCache.evict(activeThreadId);
+    threadAnchor = Date.now();
+    activeThreadId = threadId;
+  }
 
   const itemEls = findMessageItems(pane);
   if (itemEls.length === 0) {
@@ -237,16 +216,30 @@ function scrape(): void {
     const resolvedEmail = email || `unknown-${index}@outlook`;
 
     const timeEl = el.querySelector<HTMLElement>('time[datetime]');
-    const timestamp = parseTimestamp(timeEl?.getAttribute('datetime') ?? '');
+    const rawDate = timeEl?.getAttribute('datetime') ?? '';
+    const { timestamp, timestampEstimated } = parseEmailDate(rawDate, new Date(threadAnchor + index * 1000).toISOString());
 
-    const body = extractBody(el);
-    if (!body) return;
+    const bodyEl = el.querySelector(BODY_SELECTORS.join(','));
+    if (!bodyEl) return;
+    const { body, bodyHtml, history } = extractEmailBody(bodyEl, currentUserEmail, threadId, timestamp);
+    messages.push(...history);
+    const attachments = Array.from(el.querySelectorAll<HTMLAnchorElement>('a[download], a[href*="attachment" i], a[href*="GetFileAttachment" i]')).map(a => {
+      const name = a.getAttribute('download') || a.getAttribute('title') || a.textContent?.trim() || 'Attachment';
+      return { name, mimeType: mimeFromExtension(name), sizeLabel: '', downloadUrl: a.href };
+    });
+    if (!body && !attachments.length && !history.length) return;
 
     messages.push({
-      id: generateId(resolvedEmail, timestamp),
+      id: el.getAttribute('data-unique-id') || generateId(`${threadId}:${resolvedEmail}:${index}`, timestamp),
       sender: buildSender(name, resolvedEmail),
       timestamp,
-      body,
+      body: body || (history.length ? 'This email contains only quoted history, shown separately above.' : ''),
+      historyCarrier: !body && history.length > 0,
+      bodyHtml,
+      attachments,
+      source: 'direct',
+      timestampEstimated,
+      recipients: readRecipients(el, bodyEl),
       isCurrentUser: currentUserEmail
         ? resolvedEmail.toLowerCase() === currentUserEmail.toLowerCase()
         : false,
@@ -266,7 +259,7 @@ function scrape(): void {
     return;
   }
 
-  const threadData = threadCache.getThreadData(threadId, getSubject(), 'outlook');
+  const threadData = threadCache.getThreadData(threadId, getSubject(), 'outlook', currentUserEmail);
   if (!threadData) return;
 
   log(`Sending ${threadData.messages.length} messages to Side Panel`);
@@ -288,10 +281,7 @@ const debouncedScrape = debounce(scrape, 400);
 let observer: MutationObserver | null = null;
 
 function attachObserver(): void {
-  const target =
-    document.querySelector('[data-convid]')?.parentElement ??
-    document.querySelector('[role="region"][aria-label]') ??
-    document.body;
+  const target = document.body;
 
   if (observer) {
     observer.disconnect();
@@ -325,3 +315,5 @@ function bootstrapRetry(): void {
 }
 
 bootstrapRetry();
+
+chrome.runtime.onMessage.addListener(message => { if (message.type === 'SCRAPE_THREAD') { threadCache.evict(activeThreadId); debouncedScrape(); } });

@@ -1,14 +1,15 @@
-import { useRef, useEffect, forwardRef } from 'react';
-import type { ParsedMessage } from '../../types';
+import { useRef, useEffect, forwardRef, Fragment } from 'react';
+import type { ParsedMessage, ThreadData } from '../../types';
 import { MessageBubble } from './MessageBubble';
 
 interface ChatThreadProps {
   messages: ParsedMessage[];
+  participation?: ThreadData['participation'];
   searchQuery?: string;
 }
 
 export const ChatThread = forwardRef<HTMLDivElement, ChatThreadProps>(
-  function ChatThread({ messages, searchQuery = '' }, ref) {
+  function ChatThread({ messages, participation, searchQuery = '' }, ref) {
     const bottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -31,12 +32,17 @@ export const ChatThread = forwardRef<HTMLDivElement, ChatThreadProps>(
             !prev || prev.sender.email !== msg.sender.email
           );
           return (
+            <Fragment key={msg.id}>
+            {participation?.messageId === msg.id && <section className="mx-3 my-4 rounded-lg border border-blue-200 bg-blue-50 dark:bg-gray-800 p-3 text-xs" aria-label="Thread participation">
+              <p className="font-semibold text-blue-700 dark:text-blue-300">{participation.title}</p>
+              <p className="mt-1 text-gray-600 dark:text-gray-300">{participation.detail}</p>
+            </section>}
             <MessageBubble
-              key={msg.id}
               message={msg}
               showSenderName={showSenderName}
               searchQuery={searchQuery}
             />
+            </Fragment>
           );
         })}
         <div ref={bottomRef} />

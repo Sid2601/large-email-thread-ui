@@ -17,6 +17,11 @@ export default defineConfig({
     react(),
     crx({ manifest }),
   ],
+  build: {
+    // Chrome cannot reliably reuse extension preloads across execution worlds.
+    // Keep normal module imports; omit the optional preload hints/polyfill.
+    modulePreload: false,
+  },
   define: {
     // Injected as a build-time string constant — zero runtime overhead.
     // Accessible anywhere in the React app as __APP_VERSION__.

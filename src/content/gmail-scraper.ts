@@ -1,7 +1,8 @@
 import type { ParsedMessage, Attachment, ExtensionMessage } from '../types';
-import { buildSender, stripQuotedText, debounce, generateId, mimeFromExtension, sanitizeEmailHtml } from './scraper-utils';
+import { buildSender, debounce, generateId, mimeFromExtension } from './scraper-utils';
+import { readRecipients } from './message-metadata';
 import { threadCache } from './thread-cache';
-import { parseQuotedChain } from './quoted-chain-parser';
+import { extractEmailBody, mergeMessages, parseEmailDate } from './quoted-chain-parser';
 
 // Set to true only during local development — never commit as true.
 const DEBUG = false;
@@ -14,20 +15,16 @@ let retryIndex = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 let activeThreadId = '';
+let threadAnchor = Date.now();
+let lastSentUser = '';
 let expandAttempted = false;
-// Tracks whether the current thread's cache was seeded by Strategy B
-// (quoted-chain IDs). When Strategy A later expands all messages and uses
-// Gmail's data-message-id values, the two ID systems never collide, so
-// we must evict the Strategy B entries to avoid duplicate bubbles.
-let usedStrategyB = false;
-
 function getCurrentUserEmail(): string {
-  const accountEl = document.querySelector<HTMLElement>('[data-email]');
+  const accountEl = document.querySelector<HTMLElement>('[data-ogsr-up] [data-email]');
   if (accountEl) return accountEl.getAttribute('data-email') ?? '';
 
-  const profileLink = document.querySelector<HTMLAnchorElement>('a[href*="myaccount.google.com"]');
+  const profileLink = document.querySelector<HTMLElement>('a[href*="myaccount.google.com"], [aria-label*="Google Account:"], [aria-label*="Google Account"]');
   if (profileLink) {
-    const match = (profileLink.getAttribute('title') ?? '').match(/[\w.+-]+@[\w.-]+\.\w+/);
+    const match = ((profileLink.getAttribute('title') ?? '') + ' ' + (profileLink.getAttribute('aria-label') ?? '')).match(/[\w.+-]+@[\w.-]+\.\w+/);
     if (match) return match[0];
   }
   return '';
@@ -78,15 +75,15 @@ function scrapeAttachments(msgEl: HTMLElement): Attachment[] {
   return chips.flatMap(chip => {
     const tooltip = chip.getAttribute('data-tooltip') ??
                     chip.querySelector('[data-tooltip]')?.getAttribute('data-tooltip') ?? '';
-    const name = tooltip.trim();
+    const name = (chip.querySelector('.aV3, .aQw')?.textContent || tooltip).trim();
     if (!name || !name.includes('.')) return [];
 
-    const sizeEl = chip.querySelector('.aV3, [class*="size"]');
+    const sizeEl = chip.querySelector('.aV7, [class*="size"]');
     const sizeLabel = sizeEl?.textContent?.trim() ?? '';
 
     const link = chip.querySelector<HTMLAnchorElement>('a[href*="view=att"], a[href*="attid"]');
-    const downloadUrl = link?.href ?? '';
-    if (!downloadUrl) return [];
+    const downloadUrl = link?.href ?? (chip.matches('a[href]') ? (chip as HTMLAnchorElement).href : '');
+
 
     return [{ name, mimeType: mimeFromExtension(name), sizeLabel, downloadUrl }];
   });
@@ -122,34 +119,24 @@ function parseMessages(currentUserEmail: string): ParsedMessage[] {
     }
 
     const timeEl = el.querySelector<HTMLElement>('.g3, [data-tooltip]');
-    const rawTime = timeEl?.getAttribute('data-tooltip') ?? timeEl?.textContent?.trim() ?? '';
-    let timestamp: string;
-    try {
-      const parsed = new Date(rawTime);
-      timestamp = isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-    } catch {
-      timestamp = new Date().toISOString();
-    }
-
+    const rawTime = timeEl?.getAttribute('title') || timeEl?.getAttribute('data-tooltip') || timeEl?.textContent?.trim() || '';
+    const { timestamp, timestampEstimated } = parseEmailDate(rawTime, new Date(threadAnchor + index * 1000).toISOString());
     const bodyEl = el.querySelector('.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]');
     if (!bodyEl) return;
-
-    const { body, quotedText } = stripQuotedText(bodyEl);
-    if (!body) return;
-
+    const { body, bodyHtml, history } = extractEmailBody(bodyEl, currentUserEmail, activeThreadId, timestamp);
+    messages.push(...history);
     const attachments = scrapeAttachments(el);
-
-    // Build sanitized HTML body
-    const htmlClone = bodyEl.cloneNode(true) as Element;
-    htmlClone.querySelectorAll('.gmail_quote, .gmail_attr, u.q, [class*="elided"]').forEach(e => e.remove());
-    const bodyHtml = sanitizeEmailHtml(htmlClone.innerHTML);
+    if (!body && !attachments.length && !history.length) return;
 
     messages.push({
       id: domMessageId,
       sender: buildSender(senderName, senderEmail),
       timestamp,
-      body,
-      quotedText,
+      body: body || (history.length ? 'This email contains only quoted history, shown separately above.' : ''),
+      historyCarrier: !body && history.length > 0,
+      source: 'direct',
+      recipients: readRecipients(el, bodyEl),
+      timestampEstimated,
       isCurrentUser: currentUserEmail
         ? senderEmail.toLowerCase() === currentUserEmail.toLowerCase()
         : false,
@@ -183,9 +170,10 @@ function onThreadChanged(newThreadId: string): void {
     threadCache.evict(activeThreadId);
   }
   activeThreadId = newThreadId;
+  lastSentUser = '';
+  threadAnchor = Date.now();
   expandAttempted = false;
   retryIndex = 0;
-  usedStrategyB = false;
   clearRetryTimer();
 }
 
@@ -193,6 +181,10 @@ function scrapeAndSend(): void {
   const threadId = getThreadId();
 
   if (!threadId) {
+    if (activeThreadId) {
+      onThreadChanged('');
+      chrome.runtime.sendMessage({ type: 'CLEAR_THREAD' }).catch(() => {});
+    }
     log('No thread ID in URL — not in a thread view');
     return;
   }
@@ -211,44 +203,11 @@ function scrapeAndSend(): void {
 
   const currentUserEmail = getCurrentUserEmail();
 
-  // Strategy A: parse [data-message-id] elements (all expanded messages)
+  // Parse direct messages and included history from every expanded email.
   const domMessages = parseMessages(currentUserEmail);
-  log(`Strategy A (DOM): ${domMessages.length} messages`);
+  log(`Direct and recovered: ${domMessages.length} messages`);
 
-  // When Strategy A has found multiple messages AND the cache was previously
-  // seeded by Strategy B (different ID scheme), evict and rebuild cleanly.
-  // Without this, the same logical messages would appear with both IDs in the
-  // cache, causing duplicate bubbles in the Side Panel.
-  if (domMessages.length > 1 && usedStrategyB) {
-    log('Strategy A expanded — evicting Strategy B cache entries');
-    threadCache.evict(threadId);
-    usedStrategyB = false;
-  }
-
-  // Strategy B: quoted-chain DOM parser.
-  // Only runs when Strategy A has ≤1 message (expand-all hasn't settled yet).
-  // Passes threadId as ID seed (stable across calls) and the latest message's
-  // real timestamp as anchor (so estimated timestamps sort correctly).
-  const latestBodyEl = domMessages.length <= 1
-    ? document.querySelector('.a3s.aiL')
-    : null;
-
-  // Anchor: latest DOM message's real timestamp. Used by quoted-chain parser
-  // to estimate timestamps for older quoted messages relative to the latest.
-  const anchorTimestamp = domMessages.length > 0
-    ? domMessages.reduce((latest, m) =>
-        new Date(m.timestamp) > new Date(latest.timestamp) ? m : latest
-      ).timestamp
-    : new Date().toISOString();
-
-  const chainMessages = latestBodyEl
-    ? parseQuotedChain(latestBodyEl, currentUserEmail, threadId, anchorTimestamp)
-    : [];
-  log(`Strategy B (quoted chain): ${chainMessages.length} messages`);
-
-  if (chainMessages.length > 0) usedStrategyB = true;
-
-  const incoming: ParsedMessage[] = [...chainMessages, ...domMessages];
+  const incoming = mergeMessages(domMessages);
 
   if (incoming.length === 0) {
     scheduleRetry();
@@ -261,13 +220,14 @@ function scrapeAndSend(): void {
 
   // Update the cache — returns true only if new messages were found
   const changed = threadCache.update(threadId, incoming);
-  if (!changed) {
+  if (!changed && currentUserEmail === lastSentUser) {
     log('No new messages — skipping send');
     return;
   }
 
-  const threadData = threadCache.getThreadData(threadId, getSubject(), 'gmail');
+  const threadData = threadCache.getThreadData(threadId, getSubject(), 'gmail', currentUserEmail);
   if (!threadData) return;
+  lastSentUser = currentUserEmail;
 
   log(`Sending ${threadData.messages.length} messages to Side Panel`);
 
@@ -285,8 +245,8 @@ window.addEventListener('hashchange', () => {
   if (newId && newId !== activeThreadId) {
     log(`hashchange → new thread: ${newId}`);
     onThreadChanged(newId);
-    debouncedScrape();
   }
+  debouncedScrape();
 });
 
 // MutationObserver catches content changes within the current thread
@@ -296,3 +256,5 @@ observer.observe(observeTarget, { childList: true, subtree: true });
 
 log('Content script loaded');
 debouncedScrape();
+
+chrome.runtime.onMessage.addListener(message => { if (message.type === 'SCRAPE_THREAD') { threadCache.evict(activeThreadId); debouncedScrape(); } });
