@@ -1,9 +1,8 @@
 import type { Attachment } from '../types';
 import { buildSender, generateId, mimeFromExtension } from './scraper-utils';
-import { readRecipients } from './message-metadata';
+import { readRecipients, readTimestamp } from './message-metadata';
 import { startReader, imageSources } from './incremental-reader';
 import type { MessageSnapshot } from '../shared/snapshots';
-import { parseEmailDate } from './quoted-chain-parser';
 
 function getCurrentUserEmail(): string {
   const accountEl = document.querySelector<HTMLElement>('[data-ogsr-up] [data-email]');
@@ -51,6 +50,10 @@ function tryExpandAll(): void {
   });
 }
 
+// Header times only: an expanded message spells the date out in .g3, and a
+// collapsed row keeps it in the title/tooltip of its date cell.
+const TIME_SELECTOR = '.g3, time[datetime], .gH [title], .gH [data-tooltip], .xW [title], .xY [title]';
+
 function scrapeAttachments(msgEl: HTMLElement): Attachment[] {
   const chips: Element[] = [];
   // Try multiple Gmail attachment chip selectors
@@ -79,19 +82,17 @@ function scrapeAttachments(msgEl: HTMLElement): Attachment[] {
 startReader({
   client: 'gmail', messageSelector: '[data-message-id]', bodySelector: '.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]',
   threadId: getThreadId, subject: getSubject, currentUser: getCurrentUserEmail, expand: tryExpandAll,
-  snapshot(el, index, anchor, previous, bodyDirty): MessageSnapshot | null {
+  snapshot(el, index, anchor, previous, bodyDirty, position = index): MessageSnapshot | null {
     const bodyEl = el.querySelector('.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]');
     if (!bodyEl) return null;
     const currentUserEmail = getCurrentUserEmail();
     const senderEl = el.querySelector<HTMLElement>('.gD, [email]');
     const name = senderEl?.getAttribute('name') || senderEl?.textContent?.trim() || 'Unknown';
     const email = senderEl?.getAttribute('email') || senderEl?.querySelector<HTMLAnchorElement>('a[href^="mailto:"]')?.getAttribute('href')?.slice(7) || previous?.message.sender.email || `sender-${index}@unknown`;
-    const timeEl = el.querySelector<HTMLElement>('.g3, time[datetime]');
-    const raw = timeEl?.getAttribute('datetime') || timeEl?.getAttribute('title') || timeEl?.getAttribute('data-tooltip') || timeEl?.textContent || '';
-    const date = parseEmailDate(raw, previous?.message.timestamp || new Date(anchor + index * 1000).toISOString());
+    const date = readTimestamp(el, TIME_SELECTOR, previous?.message.timestamp || new Date(anchor + position * 1000).toISOString());
     return {
       message: { id: el.getAttribute('data-message-id') || previous?.message.id || generateId(email, String(index)), sender: buildSender(name, email), ...date,
-        body: '', source: 'direct', index: previous?.message.index ?? index, isCurrentUser: !!currentUserEmail && email.toLowerCase() === currentUserEmail.toLowerCase(),
+        body: '', source: 'direct', index: position, isCurrentUser: !!currentUserEmail && email.toLowerCase() === currentUserEmail.toLowerCase(),
         recipients: readRecipients(el, bodyEl), attachments: scrapeAttachments(el) },
       html: !bodyDirty && previous ? previous.html : bodyEl.innerHTML, imageSources: !bodyDirty && previous ? previous.imageSources : imageSources(bodyEl),
     };

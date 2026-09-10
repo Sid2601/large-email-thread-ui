@@ -4,7 +4,7 @@ import { sanitizeEmailHtml } from '../src/content/scraper-utils';
 import { mergeMessages } from '../src/content/message-reconciliation';
 import { parseSnapshot } from '../src/offscreen/parser';
 import { safeImageSource, imageResponse, MAX_IMAGE_BYTES } from '../src/shared/images';
-import { embedImages } from '../src/side-panel/media/images';
+import { embedImages, stripImages, inlineImageName } from '../src/side-panel/media/images';
 import type { MessageSnapshot, SnapshotBatch } from '../src/shared/snapshots';
 import { buildSender } from '../src/content/scraper-utils';
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==';
@@ -80,4 +80,27 @@ it('reports export failures and preserves available online sources', async () =>
 it('rejects oversized images and login HTML responses', async () => {
   await expect(imageResponse(new Response('login', { headers: { 'content-type': 'text/html' } }))).rejects.toThrow();
   await expect(imageResponse(new Response('', { headers: { 'content-type': 'image/png', 'content-length': String(MAX_IMAGE_BYTES + 1) } }))).rejects.toThrow('8 MB');
+});
+
+it('replaces images with filenames for a small test export, writing no image data or source URLs', () => {
+  const result = stripImages(`<html><body><section class="overview"></section><p><img src="https://mail.google.com/attachment/chart%20q4.png?token=SECRET" alt="Q4 chart"></p><p><img src="${png}"></p><p><img data-tl-image-src="blob:https://mail.google.com/9f1c" alt="Inline image"></p></body></html>`);
+  const doc = new DOMParser().parseFromString(result.html, 'text/html');
+  expect(result.replaced).toBe(3);
+  expect(doc.querySelectorAll('img')).toHaveLength(0);
+  expect(Array.from(doc.querySelectorAll('.image-placeholder')).map(el => el.getAttribute('data-image-name')))
+    .toEqual(['chart-q4.png', 'image-2.png', 'image-3.png']);
+  expect(doc.querySelector('.image-placeholder')?.textContent).toBe('chart-q4.png — Q4 chart');
+  expect(result.html).not.toContain('SECRET');
+  expect(result.html).not.toContain('base64');
+  expect(result.html).not.toContain('blob:');
+  expect(doc.querySelector('.overview')?.textContent).toContain('3 inline image(s) replaced');
+});
+it('leaves image-free exports untouched and names sources by extension', () => {
+  const result = stripImages('<html><body><section class="overview"></section><p>No images here</p></body></html>');
+  expect(result.replaced).toBe(0);
+  expect(result.html).not.toContain('image-placeholder');
+  expect(result.html).not.toContain('replaced by their filenames');
+  expect(inlineImageName('data:image/jpeg;base64,AAAA', 4)).toBe('image-4.jpg');
+  expect(inlineImageName('https://mail.google.com/photo.JPG', 1)).toBe('photo.JPG');
+  expect(inlineImageName('cid:logo', 7)).toBe('image-7.png');
 });

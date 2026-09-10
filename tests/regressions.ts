@@ -160,3 +160,108 @@ describe('HTML and attachment boundaries', () => {
     await expect(saveAttachment('large', new Blob([new Uint8Array(MAX_FILE_BYTES + 1)]))).rejects.toThrow('20 MB');
   });
 });
+
+describe('Thread order without opening every email', () => {
+  const sender = buildSender('Alice', 'alice@example.com');
+  /** A collapsed row shows "10:32" only, so its clock cannot be read and the
+   * scraper dates it from the moment the panel discovered it. */
+  function unread(index: number): ParsedMessage {
+    return { id: `u${index}`, sender, timestamp: new Date(Date.parse('2026-09-09T15:00:00Z') + index * 1000).toISOString(),
+      timestampEstimated: true, body: `Collapsed ${index}`, source: 'direct', index, isCurrentUser: false };
+  }
+  function read(index: number, timestamp: string): ParsedMessage {
+    return { id: `r${index}`, sender, timestamp, body: `Opened ${index}`, source: 'direct', index, isCurrentUser: false };
+  }
+  it('keeps unreadable clocks in their mailbox position instead of at the end', () => {
+    const merged = mergeMessages([read(0, '2026-09-08T09:00:00Z'), unread(1), unread(2), read(3, '2026-09-08T17:00:00Z'), read(4, '2026-09-09T08:00:00Z')]);
+    expect(merged.map(m => m.id)).toEqual(['r0', 'u1', 'u2', 'r3', 'r4']);
+    const times = merged.map(m => Date.parse(m.timestamp));
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+    expect(times[1]).toBeGreaterThan(Date.parse('2026-09-08T09:00:00Z'));
+    expect(times[2]).toBeLessThan(Date.parse('2026-09-08T17:00:00Z'));
+    // The time itself is still unknown and stays labelled as an estimate.
+    expect(merged[1].timestampEstimated).toBe(true);
+  });
+  it('places messages before the first and after the last readable clock', () => {
+    const merged = mergeMessages([unread(0), read(1, '2026-09-08T09:00:00Z'), unread(2)]);
+    expect(merged.map(m => m.id)).toEqual(['u0', 'r1', 'u2']);
+  });
+  it('leaves a thread alone when every clock was readable', () => {
+    const messages = [read(0, '2026-09-08T09:00:00Z'), read(1, '2026-09-08T10:00:00Z')];
+    expect(mergeMessages(messages).map(m => m.timestamp)).toEqual(messages.map(m => m.timestamp));
+  });
+  it('orders equal and unparsable clocks by mailbox position', () => {
+    const same = [read(1, '2026-09-08T09:00:00Z'), read(0, '2026-09-08T09:00:00Z')];
+    expect(mergeMessages(same).map(m => m.id)).toEqual(['r0', 'r1']);
+    const broken = [{ ...read(1, 'not a date'), timestampEstimated: undefined }, read(0, '2026-09-08T09:00:00Z')];
+    expect(mergeMessages(broken).map(m => m.id)).toEqual(['r0', 'r1']);
+  });
+});
+describe('Duplicate copies in long multi-person threads', () => {
+  const SHIFT = 4.5 * 3600 * 1000;
+  const LONG = 'By design StockMaster will have some unresolved inTransit for non-UCP stores because those stores will not have ISL to complete the actual receipting sent to SM, so the closing position shows orphaned records.';
+  const FOLLOW_UP = 'Any update on the on-order split for Sheffield North?';
+  function direct(id: string, name: string, email: string, timestamp: string, body: string, bodyHtml?: string): ParsedMessage {
+    return { id, sender: buildSender(name, email), timestamp, body, bodyHtml: bodyHtml ?? `<div>${body}</div>`, source: 'direct', index: 0, isCurrentUser: false };
+  }
+  /** The same message as a later email quoted it: the attribution clock is the
+   * sender's wall time, so it reads a whole timezone from the provider header. */
+  function copy(id: string, name: string, email: string, timestamp: string, body: string, bodyHtml?: string): ParsedMessage {
+    return { ...direct(id, name, email, new Date(Date.parse(timestamp) - SHIFT).toISOString(), body, bodyHtml),
+      timestampZoneUnknown: true, source: 'quoted', index: -1 };
+  }
+  it('assigns each copy of two identical follow-ups to the right message', () => {
+    const merged = mergeMessages([
+      direct('first', 'Alice', 'a@example.com', '2026-09-08T09:00:00Z', FOLLOW_UP),
+      direct('second', 'Alice', 'a@example.com', '2026-09-08T15:00:00Z', FOLLOW_UP),
+      copy('q-first', 'Alice', 'a@example.com', '2026-09-08T09:00:00Z', FOLLOW_UP),
+      copy('q-second', 'Alice', 'a@example.com', '2026-09-08T15:00:00Z', FOLLOW_UP),
+    ]);
+    expect(merged.map(m => m.id)).toEqual(['first', 'second']);
+  });
+  it('merges a copy whose attribution named its author without an address', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Prem Kumar', 'prem.kumar@example.com', '2026-09-09T04:10:00Z', LONG),
+      copy('quoted', 'Prem Kumar', 'unknown:Prem Kumar', '2026-09-09T04:10:00Z', LONG),
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].sender.email).toBe('prem.kumar@example.com');
+  });
+  it('still separates copies whose only identity is a placeholder name', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Unknown', 'unknown:Unknown', '2026-09-09T04:10:00Z', LONG),
+      copy('quoted', 'Unknown', 'unknown:Unknown', '2026-09-09T04:10:00Z', LONG),
+    ]);
+    expect(merged).toHaveLength(2);
+  });
+  it('merges a copy whose inline picture was re-addressed by the provider', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://ci3.googleusercontent.com/proxy/AAA"></div>`),
+      copy('quoted', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="blob:https://mail.google.com/9f1c"></div>`),
+    ]);
+    expect(merged).toHaveLength(1);
+  });
+  it('keeps copies apart when the pictures themselves differ', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://mail.google.com/one.png"></div>`),
+      copy('quoted', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://mail.google.com/two.png"></div>`),
+    ]);
+    expect(merged).toHaveLength(2);
+  });
+  it('ignores a query the provider varies around one picture', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://mail.google.com/mail/u/0?attid=0.1&permmsgid=msg-f:1"></div>`),
+      copy('quoted', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://mail.google.com/mail/u/0?attid=0.1&permmsgid=msg-f:2"></div>`),
+    ]);
+    expect(merged).toHaveLength(1);
+  });
+  it('resolves short copies from an offset two separate copies agree on', () => {
+    const merged = mergeMessages([
+      direct('long', 'Bob', 'b@example.com', '2026-09-09T08:04:00Z', LONG),
+      copy('q-long', 'Bob', 'b@example.com', '2026-09-09T08:04:00Z', LONG),
+      direct('short', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', 'Thanks, noted.'),
+      copy('q-short', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', 'Thanks, noted.'),
+    ]);
+    expect(merged.map(m => m.id)).toEqual(['short', 'long']);
+  });
+});

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { conversationHtml, conversationFilename } from '../src/side-panel/export/conversation';
+import { stripImages } from '../src/side-panel/media/images';
 import { buildSender } from '../src/content/scraper-utils';
 import type { ThreadData } from '../src/types';
 const thread: ThreadData = {
@@ -38,4 +39,19 @@ it('creates a bounded portable HTML filename', () => {
   expect(conversationFilename('../Q4: a/b\\c?*', date)).not.toMatch(/[<>:"/\\|?*]/);
   expect(conversationFilename('', date)).toBe('ThreadLens-conversation-2026-09-09.html');
   expect(conversationFilename('x'.repeat(400), date).length).toBeLessThan(140);
+});
+
+it('styles image placeholders in the no-images export and keeps attachment names', () => {
+  const withImage = { ...thread, messages: [{ ...thread.messages[0], bodyHtml: '<p>See <img src="https://mail.google.com/i/plan.png?token=SECRET" alt="plan"></p>' }] };
+  const result = stripImages(conversationHtml(withImage, date));
+  const doc = new DOMParser().parseFromString(result.html, 'text/html');
+  expect(result.replaced).toBe(1);
+  expect(doc.querySelector('.image-placeholder')?.textContent).toBe('plan.png — plan');
+  expect(doc.querySelector('style')?.textContent).toContain('.image-placeholder');
+  expect(doc.body.textContent).toContain('report.pdf');
+  expect(result.html).not.toContain('SECRET');
+});
+it('marks the no-images copy in its filename', () => {
+  expect(conversationFilename('Rollout', date, 'no-images')).toBe('ThreadLens-Rollout-2026-09-09-no-images.html');
+  expect(conversationFilename('x'.repeat(400), date, 'no-images').length).toBeLessThan(140);
 });

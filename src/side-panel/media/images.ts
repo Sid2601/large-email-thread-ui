@@ -55,3 +55,34 @@ export async function embedImages(html: string, tabId?: number) {
   }
   return { html: '<!doctype html>\n' + doc.documentElement.outerHTML, missing };
 }
+
+const IMAGE_FILENAME = /\.(png|jpe?g|gif|webp|avif)$/i;
+/** Names an image for a placeholder: the source's own filename when it has one, else image-N. */
+export function inlineImageName(source: string, index: number): string {
+  try {
+    const base = decodeURIComponent(new URL(source).pathname.split('/').pop() || '').replace(/\s+/g, '-');
+    if (IMAGE_FILENAME.test(base) && base.length <= 80) return base;
+  } catch { /* blob:, data: and cid: sources carry no filename. */ }
+  const mime = /^data:image\/([a-z0-9]+)/i.exec(source)?.[1].toLowerCase();
+  return `image-${index}.${mime === 'jpeg' ? 'jpg' : mime && /^(png|gif|webp|avif)$/.test(mime) ? mime : 'png'}`;
+}
+/** A small export for testing: every image becomes its filename, so no bytes and no expiring URLs are written. */
+export function stripImages(html: string): { html: string; replaced: number } {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const images = Array.from(doc.querySelectorAll('img'));
+  images.forEach((img, index) => {
+    const name = inlineImageName(img.getAttribute('src') || img.getAttribute('data-tl-image-src') || '', index + 1);
+    const alt = (img.getAttribute('alt') || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    const placeholder = doc.createElement('span');
+    placeholder.setAttribute('class', 'image-placeholder');
+    placeholder.setAttribute('data-image-name', name);
+    placeholder.textContent = alt && alt.toLowerCase() !== 'inline image' ? `${name} — ${alt}` : name;
+    img.replaceWith(placeholder);
+  });
+  if (images.length) {
+    const note = doc.createElement('p'); note.setAttribute('class', 'meta');
+    note.textContent = `${images.length} inline image(s) replaced by their filenames. This copy holds no image or attachment data; export with images for a complete record.`;
+    doc.querySelector('.overview')?.append(note);
+  }
+  return { html: '<!doctype html>\n' + doc.documentElement.outerHTML, replaced: images.length };
+}

@@ -12,7 +12,7 @@ import { EmptyState } from './components/EmptyState';
 
 export default function App() {
   const { threadData, isLoading } = useThreadData();
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<'' | 'full' | 'light'>('');
   const [exportError, setExportError] = useState('');
   useEffect(() => setExportError(''), [threadData?.threadId]);
   const { selectedEmail, selectSender, filteredMessages: participantFiltered } = useParticipantFilter(threadData);
@@ -52,17 +52,30 @@ export default function App() {
             <p className="font-semibold text-gray-800 dark:text-gray-100">{threadData.subject}</p>
             <button
               type="button"
-              className="mt-2 mb-1 rounded border border-blue-200 dark:border-blue-800 px-2 py-1.5 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-50 dark:hover:bg-gray-800"
+              className="mt-2 mb-1 rounded border border-blue-200 dark:border-blue-800 px-2 py-1.5 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-50 dark:hover:bg-gray-800 disabled:opacity-60"
               title="Download all recovered messages as one HTML file, including formatting, available inline images and attachment names. Other attachment files are downloaded separately."
-              disabled={exporting}
+              disabled={exporting !== ''}
               onClick={async () => {
-                setExporting(true);
+                setExporting('full');
                 setExportError('');
                 try { const missing = await downloadConversation(threadData); if (missing) setExportError(`${missing} image(s) could not be embedded; the export explains which images need email access.`); }
                 catch { setExportError('Could not export the conversation. Please try again.'); }
-                finally { setExporting(false); }
+                finally { setExporting(''); }
               }}
-            >{exporting ? 'Preparing images…' : '↓ Download conversation (.html)'}</button>
+            >{exporting === 'full' ? 'Preparing images…' : '↓ Download conversation (.html)'}</button>
+            <button
+              type="button"
+              className="mt-2 mb-1 ml-2 rounded border border-gray-300 dark:border-gray-600 px-2 py-1.5 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-60"
+              title="Download the same messages as a small file for testing: no image or attachment data is written, and each inline image is replaced by its filename (for example image-1.png)."
+              disabled={exporting !== ''}
+              onClick={async () => {
+                setExporting('light');
+                setExportError('');
+                try { await downloadConversation(threadData, { includeImages: false }); }
+                catch { setExportError('Could not export the conversation. Please try again.'); }
+                finally { setExporting(''); }
+              }}
+            >{exporting === 'light' ? 'Preparing file…' : '↓ Text only (no images)'}</button>
             {threadData.client === 'gmail' && <button className="ml-2 text-blue-700 dark:text-blue-300 underline" title="Only if older history is missing: expand collapsed emails in Gmail and read them." onClick={() => { if (threadData.sourceTabId !== undefined) void chrome.tabs.sendMessage(threadData.sourceTabId, { type: 'EXPAND_THREAD' }).catch(() => setExportError('Refresh the original mail tab to read collapsed emails.')); }}>Read collapsed emails</button>}
             {exportError && <p role="alert" className="text-red-600">{exportError}</p>}
             <p className="mt-1">Includes history quoted in the emails available here. Earlier messages or files omitted by the sender cannot be recovered.</p>

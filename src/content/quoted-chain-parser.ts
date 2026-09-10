@@ -71,7 +71,9 @@ function project(root: Element) {
 
 function sender(raw: string) {
   const email = raw.match(/[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[a-z]{2,}/i)?.[0] ?? '';
-  const name = raw.replace(email, '').replace(/\[mailto:[^\]]*\]/gi, '').replace(/[<>"()]/g, '').trim();
+  const name = raw.replace(email, '').replace(/\[mailto:[^\]]*\]/gi, '').replace(/[<>"()]/g, '')
+    // An attribution separates the date from the author with punctuation.
+    .replace(/^[\s,;:·•-]+/, '').replace(/[\s,;:]+$/, '').trim();
   return buildSender(name || email.split('@')[0] || 'Unknown', email || `unknown:${name}`);
 }
 
@@ -79,7 +81,8 @@ function sender(raw: string) {
  * clock. Without an explicit offset the same message reads hours away from the
  * provider header, which is rendered in the reader's own timezone. */
 export function hasExplicitTimezone(raw: string): boolean {
-  return /[+-]\d{2}:?\d{2}\b|\b(?:GMT|UTC|UT|Z)\b/i.test(raw);
+  // A trailing ISO Z follows a digit, where a word boundary never appears.
+  return /[+-]\d{2}:?\d{2}\b|\b(?:GMT|UTC|UT|Z)\b|\dZ$/i.test(raw);
 }
 
 export function parseEmailDate(raw: string, fallback: string) {
@@ -128,7 +131,9 @@ export function extractEmailBody(bodyEl: Element, currentUserEmail: string, thre
     const name = a?.textContent?.trim() ?? '';
     // Date precedes the sender; stop at the time (plus optional timezone).
     const date = raw.match(/^On\s+(.+?\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?(?:\s*(?:[+-]\d{4}|GMT|UTC))?)/i)?.[1] ?? match?.[1] ?? '';
-    const who = a ? buildSender(name || address, address) : sender(raw.slice(date.length + 3).replace(/wrote:\s*$/i, ''));
+    // Gmail links the address and leaves the display name in the text beside it.
+    const labelled = sender(raw.slice(date.length + 3).replace(/wrote:\s*$/i, ''));
+    const who = a ? buildSender(labelled.name && labelled.name !== address ? labelled.name : name || address, address) : labelled;
     let quote = el.nextElementSibling;
     while (quote && !quote.matches('blockquote, .gmail_quote, .gmail_attr')) quote = quote.nextElementSibling;
     const enclosing = el.closest('blockquote, .gmail_quote');

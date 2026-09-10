@@ -1,6 +1,6 @@
 # ThreadLens project context
 
-Updated 2026-09-10. Current source version: **1.4.0**.
+Updated 2026-09-10. Current source version: **1.5.0**.
 
 ## Goal
 

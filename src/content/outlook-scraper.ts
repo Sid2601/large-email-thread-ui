@@ -1,7 +1,6 @@
 import type { ParsedMessage } from '../types';
 import { buildSender, generateId, mimeFromExtension } from './scraper-utils';
-import { readRecipients } from './message-metadata';
-import { parseEmailDate } from './quoted-chain-parser';
+import { readRecipients, readTimestamp } from './message-metadata';
 import { startReader, imageSources } from './incremental-reader';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,19 +177,19 @@ startReader({
     const pane = readingPane();
     return (pane?.querySelector('[data-convid]') ?? (pane?.matches('[data-convid]') ? pane : null) ?? document.querySelector('[data-convid][aria-selected="true"], [aria-selected="true"] [data-convid]'))?.getAttribute('data-convid') ?? '';
   }, subject: getSubject, currentUser: getCurrentUserEmail,
-  snapshot(el, index, anchor, previous, bodyDirty) {
+  snapshot(el, index, anchor, previous, bodyDirty, position = index) {
     if (!readingPane()?.contains(el)) return null;
     const bodyEl = el.querySelector(BODY_SELECTORS.join(',')); if (!bodyEl) return null;
     if (messageElement(bodyEl) !== el) return null;
     const { name, email } = extractSender(el, previous?.message.index ?? index);
     const user = getCurrentUserEmail();
-    const date = parseEmailDate(el.querySelector('time[datetime]')?.getAttribute('datetime') ?? '', previous?.message.timestamp || new Date(anchor + index * 1000).toISOString());
+    const date = readTimestamp(el, 'time[datetime], time[title], [class*="Time"][title], [class*="Time"] [title]', previous?.message.timestamp || new Date(anchor + position * 1000).toISOString());
     const attachments = Array.from(el.querySelectorAll<HTMLAnchorElement>('a[download], a[href*="attachment" i], a[href*="GetFileAttachment" i]')).map(a => {
       const name = a.getAttribute('download') || a.getAttribute('title') || a.textContent?.trim() || 'Attachment';
       return { name, mimeType: mimeFromExtension(name), sizeLabel: '', downloadUrl: a.href };
     });
     const message: ParsedMessage = { id: el.getAttribute('data-unique-id') || previous?.message.id || generateId(`${email}:${index}`, String(anchor)), sender: buildSender(name, email), ...date,
-      body: '', source: 'direct', index: previous?.message.index ?? index, isCurrentUser: !!user && email.toLowerCase() === user.toLowerCase(), recipients: readRecipients(el, bodyEl), attachments };
+      body: '', source: 'direct', index: position, isCurrentUser: !!user && email.toLowerCase() === user.toLowerCase(), recipients: readRecipients(el, bodyEl), attachments };
     return { message, html: !bodyDirty && previous ? previous.html : bodyEl.innerHTML, imageSources: !bodyDirty && previous ? previous.imageSources : imageSources(bodyEl) };
   },
 });

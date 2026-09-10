@@ -10,7 +10,8 @@ export interface ReaderAdapter {
   subject(): string;
   currentUser(): string;
   messageElement?(target: Element): HTMLElement | null;
-  snapshot(el: HTMLElement, index: number, anchor: number, previous?: MessageSnapshot, bodyDirty?: boolean): MessageSnapshot | null;
+  /** `position` is the message's place in the mailbox's own order, which is authoritative when a clock cannot be read. */
+  snapshot(el: HTMLElement, index: number, anchor: number, previous?: MessageSnapshot, bodyDirty?: boolean, position?: number): MessageSnapshot | null;
   expand?(): void;
 }
 /** Only DOM snapshots run here. Parsing/reconciliation run in the extension document. */
@@ -49,6 +50,10 @@ export function startReader(adapter: ReaderAdapter) {
     const collected: HTMLElement[] = [];
     try {
       const snapshots: MessageSnapshot[] = [];
+      // The provider renders a thread in order, so read each message's place in
+      // it once per pass: a lazily inserted email shifts the ones after it.
+      const positions = new Map<Element, number>();
+      document.querySelectorAll<HTMLElement>(adapter.messageSelector).forEach((el, at) => positions.set(el, at));
       for (const [el, bodyDirty] of Array.from(dirty)) {
         if (token !== revision) return;
         dirty.delete(el);
@@ -57,7 +62,7 @@ export function startReader(adapter: ReaderAdapter) {
         if (token !== revision) return;
         const previous = known.get(el);
         const start = performance.now();
-        const snapshot = adapter.snapshot(el, stats.snapshots, anchor, previous, bodyDirty);
+        const snapshot = adapter.snapshot(el, stats.snapshots, anchor, previous, bodyDirty, positions.get(el) ?? previous?.message.index ?? stats.snapshots);
         const elapsed = performance.now() - start;
         stats.snapshotMs += elapsed; stats.maxSnapshotMs = Math.max(stats.maxSnapshotMs, elapsed);
         if (!snapshot) continue;
