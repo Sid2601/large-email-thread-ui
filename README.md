@@ -60,3 +60,7 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
 ```
 
 The parser suite has **98 passing checks**, including a 40-message case. The browser smoke tests extraction, table rendering, rich search, attachment persistence/download/removal and tab navigation. See **TEST_COVERAGE.md** for the covered cases, and **CONTEXT.md** for architecture, implementation decisions, limitations and next checks.
+
+## Recreate release downloads after cloning
+
+The generated `dist/` and `releases/` directories are intentionally ignored by Git. All source for the 1.3.1 fixes is in main. Run `npm ci` and `npm run package` (Node.js 20.19+ and Python 3) to validate, rebuild, and produce `releases/threadlens-<version>.zip` with installation instructions and SHA-256 checksums. The ZIP contains a root manifest.json and can be extracted and loaded unpacked in Chrome. No customer mail is included.

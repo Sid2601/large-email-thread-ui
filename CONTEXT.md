@@ -1,6 +1,6 @@
 # ThreadLens project context
 
-Updated 2026-09-09. Current local release: **1.3.0**.
+Updated 2026-09-09. Current source version: **1.3.1**.
 
 ## Goal
 
@@ -93,3 +93,7 @@ Changes:
 - Browser smoke adds duplicate quotes across several direct emails, a missing-year near-copy reproduction, evidence-backed joining, and forwarding without introductory text. Unit suite: 88 tests.
 
 Known limits remain: omitted/unreceived earlier mail and inaccessible file bytes cannot be reconstructed; localized/custom headers, provider DOM changes, ambiguous timestamps, sender-edited quotations and interleaved inline responses require case-specific handling. Do not replace conservative matching with broad fuzzy deletion. See TEST_COVERAGE.md before adding fixtures.
+
+## Recovery audit, 2026-09-10
+
+Fresh main at 1048d56 includes the 1.3.1 timezone fixes plus quoted-history parsing, enterprise deduplication/variants, participation markers, HTML export, IndexedDB attachments and the modulepreload fix. Generated releases were ignored rather than lost source fixes. `npm run package` now regenerates a validated local ZIP from committed sources. The unfinished 1.4.0 inline-image/offscreen-parser changes were not in main and are being restored separately from local task edit records.
