@@ -1,0 +1,38 @@
+[
+  {
+    "name": "baseline 1.3.1",
+    "inputHtmlBytes": 1043271,
+    "messages": 40,
+    "elapsedMs": 8328,
+    "initialPageScriptMs": 524.9359999999999,
+    "scrollBurstPageScriptMs": 2353.896,
+    "automaticExpandClicks": 1
+  },
+  {
+    "name": "incremental offscreen parser",
+    "inputHtmlBytes": 1043271,
+    "messages": 40,
+    "elapsedMs": 11772,
+    "initialPageScriptMs": 4.841,
+    "scrollBurstPageScriptMs": 1.2120000000000004,
+    "automaticExpandClicks": 0,
+    "statsBefore": {
+      "batches": 10,
+      "snapshots": 40,
+      "scans": 1,
+      "snapshotMs": 84.09999990463257,
+      "maxSnapshotMs": 2.700000047683716,
+      "ignoredMutations": 0,
+      "pending": 0
+    },
+    "statsAfter": {
+      "batches": 10,
+      "snapshots": 40,
+      "scans": 1,
+      "snapshotMs": 84.09999990463257,
+      "maxSnapshotMs": 2.700000047683716,
+      "ignoredMutations": 5,
+      "pending": 0
+    }
+  }
+]

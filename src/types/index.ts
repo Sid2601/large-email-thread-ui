@@ -45,6 +45,7 @@ export interface ThreadData {
   messages: ParsedMessage[];
   participants: Participant[];
   currentUserEmail?: string;
+  sourceTabId?: number;
   participation?: { messageId: string; kind: 'recipient' | 'authored' | 'available'; title: string; detail: string };
 }
 

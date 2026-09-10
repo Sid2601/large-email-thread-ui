@@ -1,5 +1,9 @@
 import type { ParsedMessage, ThreadData } from '../types';
 
+export function imageIdentity(html = ''): string {
+  return (html.match(/<img\b[^>]*>/gi) ?? []).map(tag => tag.match(/(?:src|data-tl-image-src)="([^"]+)"/i)?.[1] ?? '').join('|');
+}
+
 export function normalizedBody(body: string): string {
   return body.replace(/^\s*>+\s?/gm, '').normalize('NFKC').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 }
@@ -61,6 +65,8 @@ function nearCopy(a: string, b: string): boolean {
 const LONG_ENOUGH = 160, SPECIFIC_ENOUGH = 40;
 function match(a: ParsedMessage, b: ParsedMessage, offsets: number[]): boolean {
   if (a.id === b.id) return true;
+  const leftImages = imageIdentity(a.bodyHtml), rightImages = imageIdentity(b.bodyHtml);
+  if (leftImages && rightImages && leftImages !== rightImages) return false;
   if (a.source !== 'quoted' && b.source !== 'quoted') return false;
   if (a.sender.email.toLowerCase().replace(/\s/g, '') !== b.sender.email.toLowerCase().replace(/\s/g, '')) return false;
   // Unknown names are not enough evidence to merge independent senders.
@@ -95,8 +101,8 @@ function timeRank(m: ParsedMessage): number {
 }
 function combine(primary: ParsedMessage, copy: ParsedMessage): ParsedMessage {
   const variants = [...(primary.quotedVariants ?? []), ...(copy.quotedVariants ?? [])];
-  if (normalizedBody(primary.body) !== normalizedBody(copy.body)) variants.push({ body: copy.body, bodyHtml: copy.bodyHtml });
-  const distinct = variants.filter((v, i) => normalizedBody(v.body) !== normalizedBody(primary.body) && variants.findIndex(other => normalizedBody(other.body) === normalizedBody(v.body)) === i);
+  if (normalizedBody(primary.body) !== normalizedBody(copy.body) || imageIdentity(primary.bodyHtml) !== imageIdentity(copy.bodyHtml)) variants.push({ body: copy.body, bodyHtml: copy.bodyHtml });
+  const distinct = variants.filter((v, i) => (normalizedBody(v.body) !== normalizedBody(primary.body) || imageIdentity(v.bodyHtml) !== imageIdentity(primary.bodyHtml)) && variants.findIndex(other => normalizedBody(other.body) === normalizedBody(v.body) && imageIdentity(other.bodyHtml) === imageIdentity(v.bodyHtml)) === i);
   const attachments = [...(primary.attachments ?? []), ...(copy.attachments ?? [])];
   const recipients = Array.from(new Set([...(primary.recipients ?? []), ...(copy.recipients ?? [])]));
   return { ...primary,

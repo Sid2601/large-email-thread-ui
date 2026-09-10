@@ -4,12 +4,13 @@ import { MessageBubble } from './MessageBubble';
 
 interface ChatThreadProps {
   messages: ParsedMessage[];
+  tabId?: number;
   participation?: ThreadData['participation'];
   searchQuery?: string;
 }
 
 export const ChatThread = forwardRef<HTMLDivElement, ChatThreadProps>(
-  function ChatThread({ messages, participation, searchQuery = '' }, ref) {
+  function ChatThread({ messages, participation, tabId, searchQuery = '' }, ref) {
     const bottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -39,6 +40,7 @@ export const ChatThread = forwardRef<HTMLDivElement, ChatThreadProps>(
             </section>}
             <MessageBubble
               message={msg}
+              tabId={tabId}
               showSenderName={showSenderName}
               searchQuery={searchQuery}
             />

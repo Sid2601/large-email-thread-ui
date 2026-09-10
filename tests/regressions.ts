@@ -142,7 +142,7 @@ describe('Quoted attribution timezones', () => {
 });
 describe('HTML and attachment boundaries', () => {
   it('removes active content, tracking requests and layout takeover while preserving formatting', () => {
-    const html = sanitizeEmailHtml('<script>alert(1)</script><img src="https://tracker.test/x"><div id="app" onclick="evil()" style="position:fixed;background-image:url(https://tracker.test);color:red"><a href="javascript:evil()">bad</a><a href="https://example.com">good</a><table><tr><td rowspan="2">Cell</td></tr></table></div>');
+    const html = sanitizeEmailHtml('<script>alert(1)</script><img src="https://tracker.test/x" width="1" height="1"><div id="app" onclick="evil()" style="position:fixed;background-image:url(https://tracker.test);color:red"><a href="javascript:evil()">bad</a><a href="https://example.com">good</a><table><tr><td rowspan="2">Cell</td></tr></table></div>');
     expect(html).not.toMatch(/script|tracker|onclick|position|javascript|id="app"/);
     expect(html).toContain('color:red');
     expect(html).toContain('rowspan="2"');

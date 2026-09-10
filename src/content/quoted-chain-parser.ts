@@ -2,44 +2,55 @@
 import type { ParsedMessage } from '../types';
 import { buildSender, htmlToText, generateId, sanitizeEmailHtml } from './scraper-utils';
 
-import { mergeMessages } from './message-reconciliation';
+import { mergeMessages, imageIdentity } from './message-reconciliation';
 export { mergeMessages } from './message-reconciliation';
 
-type Point = { node: Node; offset: number };
+type TextRun = { start: number; end: number; node: Node; offset: number; image?: boolean };
 type Header = { start: number; end: number; sender: ReturnType<typeof buildSender>; date: string; scopeEnd?: number; recipients?: string[] };
 const BLOCK = /^(DIV|P|BLOCKQUOTE|TR|H[1-6]|LI|PRE|HR)$/;
 
-// A text projection with a DOM point per character lets us split even headers
-// spread across spans/bold tags, while cloning tables and lists intact.
+// One DOM mapping per text run avoids allocating an object for every character.
+// Range slices still preserve headers spread across spans, tables, and lists.
 function project(root: Element) {
-  let text = '';
-  const points: Point[] = [];
+  const chunks: string[] = [];
+  let length = 0;
+  const runs: TextRun[] = [];
   const spans = new Map<Element, [number, number]>();
-  function add(s: string, node: Node, offset: number) {
-    for (let i = 0; i < s.length; i++) {
-      text += s[i];
-      points.push({ node, offset: node.nodeType === Node.TEXT_NODE ? offset + i : offset });
-    }
+  function add(s: string, node: Node, offset: number, image = false) {
+    if (!s) return;
+    runs.push({ start: length, end: length + s.length, node, offset, image });
+    chunks.push(s); length += s.length;
   }
   function visit(node: Node) {
     if (node.nodeType === Node.TEXT_NODE) { add(node.textContent ?? '', node, 0); return; }
     if (!(node instanceof Element)) return;
+    if (node.tagName === 'IMG' && node.parentNode) {
+      add('\uFFFC', node.parentNode, Array.from(node.parentNode.childNodes).indexOf(node), true);
+      return;
+    }
     if (BLOCK.test(node.tagName) || node.tagName === 'BR') add('\n', node, 0);
-    const start = text.length;
+    const start = length;
     node.childNodes.forEach(visit);
-    spans.set(node, [start, text.length]);
+    spans.set(node, [start, length]);
     if (BLOCK.test(node.tagName)) add('\n', node, node.childNodes.length);
   }
   visit(root);
+  const text = chunks.join('');
+  function point(index: number, end = false) {
+    let low = 0, high = runs.length - 1;
+    while (low < high) { const mid = (low + high) >>> 1; if (runs[mid].end <= index) low = mid + 1; else high = mid; }
+    const run = runs[low];
+    return { node: run.node, offset: run.offset + (run.node.nodeType === Node.TEXT_NODE ? index - run.start + Number(end) : run.image && end ? 1 : 0) };
+  }
   function slice(start: number, end: number) {
     while (start < end && /\s/.test(text[start])) start++;
     while (end > start && /\s/.test(text[end - 1])) end--;
     if (start === end) return '';
-    const range = document.createRange();
-    const a = points[start], b = points[end - 1];
+    const range = root.ownerDocument.createRange();
+    const a = point(start), b = point(end - 1, true);
     range.setStart(a.node, a.offset);
-    range.setEnd(b.node, b.offset + (b.node.nodeType === Node.TEXT_NODE ? 1 : 0));
-    const div = document.createElement('div');
+    range.setEnd(b.node, b.offset);
+    const div = root.ownerDocument.createElement('div');
     div.append(range.cloneContents());
     let ancestor = range.commonAncestorContainer;
     if (ancestor.nodeType === Node.TEXT_NODE) ancestor = ancestor.parentNode!;
@@ -99,7 +110,8 @@ function isRecipientContinuation(line: string): boolean {
 }
 
 export function extractEmailBody(bodyEl: Element, currentUserEmail: string, threadId: string, anchorTimestamp: string) {
-  const root = bodyEl.cloneNode(true) as Element;
+  const inert = new DOMParser().parseFromString('', 'text/html');
+  const root = inert.importNode(bodyEl, true) as Element;
   root.querySelectorAll('script,style,iframe,object,form,u.q').forEach(el => el.remove());
   // Collapsed quote history may already be loaded but hidden by the provider.
   // Keep it for extraction; sanitization removes hidden/display attributes.
@@ -200,10 +212,10 @@ export function extractEmailBody(bodyEl: Element, currentUserEmail: string, thre
     // Only a clock we actually read from the header can be zone-shifted; an
     // unparsed date already falls back to the carrier's position in the thread.
     const zoneUnknown = date.timestamp !== fallback && !hasExplicitTimezone(h.date);
-    const key = `${threadId}:${h.sender.email}:${h.date}:${body.body.replace(/\s+/g, ' ').trim()}`;
+    const key = `${threadId}:${h.sender.email}:${h.date}:${body.body.replace(/\s+/g, ' ').trim()}:${imageIdentity(body.bodyHtml)}`;
     return { id: generateId(key, 'chain'), sender: h.sender, ...date, ...(zoneUnknown ? { timestampZoneUnknown: true } : {}), ...body, source: 'quoted', recipients: h.recipients,
       isCurrentUser: !!currentUserEmail && h.sender.email === currentUserEmail.toLowerCase(), index: -i - 1 };
-  }).filter(m => m.body || /<table/i.test(m.bodyHtml ?? ''));
+  }).filter(m => m.body || /<(?:table|img)\b/i.test(m.bodyHtml ?? ''));
   return { ...content(0, p.text.length), history: mergeMessages(history) };
 }
 

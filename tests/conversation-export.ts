@@ -23,7 +23,7 @@ it('exports all messages in order with formatting, identities and attachment nam
   expect(thread.messages[0].id).toBe('new');
 });
 it('escapes metadata and plain text, sanitizes HTML, and embeds no executable scripts', () => {
-  const unsafe = { ...thread, subject: '</title><script>alert(1)</script>', messages: [{ ...thread.messages[0], bodyHtml: '<img src="https://tracker.test"><script>evil()</script><a href="javascript:evil()">Click</a>', sender: buildSender('<img src=x onerror=evil()>', 'a@example.com') }] };
+  const unsafe = { ...thread, subject: '</title><script>alert(1)</script>', messages: [{ ...thread.messages[0], bodyHtml: '<img src="javascript:evil()"><script>evil()</script><a href="javascript:evil()">Click</a>', sender: buildSender('<img src=x onerror=evil()>', 'a@example.com') }] };
   const doc = new DOMParser().parseFromString(conversationHtml(unsafe, date), 'text/html');
   expect(doc.querySelectorAll('script,img,iframe')).toHaveLength(0);
   expect(doc.querySelector('a')?.hasAttribute('href')).toBe(false);
