@@ -51,6 +51,18 @@ export function MessageBubble({ message, showSenderName, searchQuery = '', tabId
     ? 'Read from quoted text, which records no timezone. This can be offset from the original send time.'
     : undefined;
 
+  // An email that added no words of its own is an event, not a message: it is
+  // announced on one line instead of being drawn as an empty bubble.
+  if (message.historyCarrier) {
+    return (
+      <div className="my-2 px-3 flex justify-center">
+        <p className="max-w-[92%] rounded-full border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-1 text-center text-xs text-gray-600 dark:text-gray-300">
+          ↪ {highlightText(body, searchQuery)}{time ? ` · ${time}` : ''}
+        </p>
+      </div>
+    );
+  }
+
   if (isCurrentUser) {
     return (
       <div className="flex justify-end mb-1 px-3">

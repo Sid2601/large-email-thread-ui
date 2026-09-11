@@ -3,6 +3,20 @@ import { threadCache } from '../content/thread-cache';
 import type { ParsedMessage } from '../types';
 import type { SnapshotBatch, MessageSnapshot } from '../shared/snapshots';
 
+/**
+ * An email that adds no words of its own is still an event in the conversation:
+ * somebody passed the thread on, and to whom is what the reader wants to know.
+ * It is named rather than shown as an empty message.
+ */
+function carrierNotice(message: ParsedMessage): string {
+  const who = message.sender.name?.trim() || message.sender.email;
+  const to = (message.recipients ?? []).filter(address => address && address !== message.sender.email);
+  const named = to.length <= 3 ? to.join(', ') : `${to.slice(0, 2).join(', ')} and ${to.length - 2} others`;
+  return named
+    ? `${who} passed this conversation on to ${named} without adding a message. Everything below was quoted from the thread.`
+    : `${who} passed this conversation on without adding a message. Everything below was quoted from the thread.`;
+}
+
 export function parseSnapshot(snapshot: MessageSnapshot, batch: SnapshotBatch): ParsedMessage[] {
   // An inert document prevents email images/scripts from loading while parsing.
   const doc = new DOMParser().parseFromString('<!doctype html><body></body>', 'text/html');
@@ -15,8 +29,9 @@ export function parseSnapshot(snapshot: MessageSnapshot, batch: SnapshotBatch): 
   const { body, bodyHtml, history } = extractEmailBody(root, batch.currentUserEmail, batch.threadId, snapshot.message.timestamp, snapshot.message.id);
   const hasImage = /<img\b/i.test(bodyHtml);
   if (!body && !hasImage && !history.length && !snapshot.message.attachments?.length) return history;
-  return [...history, { ...snapshot.message, body: body || (history.length && !hasImage ? 'This email contains only quoted history, shown separately above.' : ''),
-    bodyHtml, historyCarrier: !body && !hasImage && history.length > 0 }];
+  const carrier = !body && !hasImage && history.length > 0;
+  return [...history, { ...snapshot.message, body: carrier ? carrierNotice(snapshot.message) : body,
+    bodyHtml: carrier ? '' : bodyHtml, historyCarrier: carrier }];
 }
 const sessions = new Map<number, string>();
 export async function parseBatch(tabId: number, batch: SnapshotBatch) {

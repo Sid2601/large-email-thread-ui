@@ -68,6 +68,18 @@ try {
   assert.ok(exported.includes('report.txt'));
   assert.ok(exported.includes('<table>'));
   assert.ok(!exported.includes('view=att'), 'provider attachment URLs are not exported');
+  // The share-safe copy must hold the same messages with no real identity, image or attachment data.
+  const [maskedExport] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name: 'Masked copy (share-safe)' }).click()]);
+  assert.ok(maskedExport.suggestedFilename().endsWith('-masked.html'));
+  const maskedPath = resolve('artifacts/masked-export.html');
+  await maskedExport.saveAs(maskedPath);
+  const masked = await readFile(maskedPath, 'utf8');
+  assert.equal((masked.match(/<article /g) || []).length, 4, 'the masked copy keeps every message');
+  for (const identity of ['Carol', 'Dave', 'Alice', 'Bob', 'carol@', 'dave@', 'alice@', 'bob@'])
+    assert.ok(!masked.includes(identity), `masked export leaks ${identity}`);
+  assert.ok(masked.includes('&lt;person1@example.com&gt;'), 'senders become numbered placeholders');
+  assert.ok(masked.includes('Budget approved.') && masked.includes('<table>'), 'wording and structure survive masking');
+  assert.ok(!masked.includes('<img'), 'a masked copy writes no image data');
   await panel.locator('input[type="text"], input[type="search"]').fill('');
   await panel.getByText('Save locally', { exact: true }).click();
   await panel.getByText('Saved on this device', { exact: true }).waitFor();
@@ -113,7 +125,7 @@ try {
   const forwardOnly = markup.slice(markup.indexOf('<div data-message-id="joined">')).replace('<p>Adding you to the discussion.</p>', '');
   await mail.evaluate(markup => { document.querySelector('main').innerHTML = '<span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Forward only</h2>' + markup; location.hash = '#inbox/forwardonly123'; }, forwardOnly);
   await panel.getByText('Forward only', { exact: true }).waitFor();
-  await panel.getByText('This email contains only quoted history, shown separately above.', { exact: true }).waitFor();
+  await panel.getByText('passed this conversation on', { exact: false }).waitFor();
   await panel.getByText('You joined here · first visible inclusion', { exact: true }).waitFor();
   // Images retain their author and placement; source-tab blob URLs are resolved
   // only when visible, and both sources become offline bytes on export.
@@ -178,5 +190,5 @@ try {
   await exportedPage.screenshot({ path: 'artifacts/conversation-export.png', fullPage: true });
   assert.deepEqual(errors, []);
   assert.ok(!panelLogs.some(text => text.includes('cross-world extension resource mismatch')), 'no cross-world preload warnings');
-  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone full-conversation export during search, table, rich search, local file save/reload/download/remove, HTTPS/blob inline images, full-size viewer, offline embedded images, incremental body updates/replacement, navigation clearing; no page errors or cross-world preload warnings.');
+  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone full-conversation export during search, identity-masked export, table, rich search, local file save/reload/download/remove, HTTPS/blob inline images, full-size viewer, offline embedded images, incremental body updates/replacement, navigation clearing; no page errors or cross-world preload warnings.');
 } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }

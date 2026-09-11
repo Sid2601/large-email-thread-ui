@@ -57,7 +57,12 @@ function project(root: Element) {
     while (ancestor instanceof Element && ancestor !== root) {
       // Restore the formatting context omitted by cloneContents (notably a
       // single-cell table, bold span, or ordered list containing one item).
-      if (!ancestor.matches('.gmail_quote, blockquote.gmail_quote')) {
+      // A quote wrapper enclosing the whole segment is not that: it is the
+      // indent the quoting client put around the message, and a deep thread
+      // restored one per reply, drawing a column of empty vertical rules
+      // before every recovered message. An author's own quotation sits inside
+      // the message and is cloned with it, so it is unaffected.
+      if (!ancestor.matches('blockquote, .gmail_quote')) {
         const wrapper = ancestor.cloneNode(false) as Element;
         wrapper.append(...Array.from(div.childNodes));
         div.append(wrapper);
@@ -107,12 +112,43 @@ export function recipientEmails(raw: string): string[] {
   return Array.from(new Set((raw.match(/[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[a-z]{2,}/gi) ?? []).map(email => email.toLowerCase())));
 }
 
+const ADDRESSED_RECIPIENT = /(?:"[^"]*"|[^<>;,]+)?<?[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[a-z]{2,}>?/gi;
+// A display name, not prose: capitalised words or initials, at most a few of
+// them. Lower-case words mean the line is the message, not the header.
+const TRAILING_NAME = /^[\p{Lu}\p{N}][\p{L}\p{N}.'\u2019-]*(?:[ \t]+[\p{Lu}\p{N}][\p{L}\p{N}.'\u2019-]*){0,4}$/u;
+/** What a recipient line leaves behind once its addresses are removed. */
+function recipientRemainder(line: string): string {
+  return line.replace(ADDRESSED_RECIPIENT, '').replace(/[\s;,]+/g, ' ').trim();
+}
+/**
+ * Outlook wraps a long To/Cc list at whatever column it reaches, including
+ * between a display name and its own address, so a wrapped line can end with a
+ * bare name and the next can begin with a lone address. Both are still the
+ * header, and reading them as the message left recipient lists and the Subject
+ * line stranded at the top of the body.
+ */
 function isRecipientContinuation(line: string): boolean {
-  const email = /(?:[^<>;,]+<)?[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[a-z]{2,}>?/gi;
-  return recipientEmails(line).length > 0 && !line.replace(email, '').replace(/[\s;,]/g, '');
+  if (!recipientEmails(line).length) return false;
+  const rest = recipientRemainder(line);
+  return !rest || (rest.length <= 60 && TRAILING_NAME.test(rest));
+}
+/** The list is unfinished: it ends with a separator, or with a name whose
+ * address wrapped onto the next line. */
+function recipientsContinue(value: string): boolean {
+  return /[,;]\s*$/.test(value) || !!recipientRemainder(value);
 }
 
-export function extractEmailBody(bodyEl: Element, currentUserEmail: string, threadId: string, anchorTimestamp: string, carrierId = anchorTimestamp) {
+/**
+ * A complete quoted header block still sitting inside an extracted body. One
+ * provider shape can defeat the first pass — a wrapped recipient list, an
+ * unexpected element between the fields — and the result is two emails shown
+ * as one. Re-reading the extracted body catches it whatever the cause was,
+ * because the second pass sees the rebuilt markup rather than the provider's.
+ */
+const UNSPLIT_HEADER = /^[ \t>]*(?:From|De|Von|Van):[ \t]*\S[^\n]*\n[\s\S]{0,800}?^[ \t>]*(?:Sent|Date|Envoyé|Gesendet|Verzonden):/im;
+const MAX_RESCAN_DEPTH = 2;
+
+export function extractEmailBody(bodyEl: Element, currentUserEmail: string, threadId: string, anchorTimestamp: string, carrierId = anchorTimestamp, depth = 0) {
   const inert = new DOMParser().parseFromString('', 'text/html');
   const root = inert.importNode(bodyEl, true) as Element;
   root.querySelectorAll('script,style,iframe,object,form,u.q').forEach(el => el.remove());
@@ -147,22 +183,39 @@ export function extractEmailBody(bodyEl: Element, currentUserEmail: string, thre
   while ((m = re.exec(p.text))) {
     const rest = p.text.slice(m.index + m[0].length);
     const lines = rest.split('\n');
-    let consumed = 0, date = '', evidence = false, fields = 0;
+    let consumed = 0, date = '', evidence = false, fields = 0, stray = 0;
     const recipients: string[] = [];
     let previousField = '';
     let recipientContinuation = false;
-    for (const line of lines.slice(0, 24)) {
-      const field = line.match(/^[\s>]*(Sent|Date|Envoyé|Gesendet|Verzonden|To|À|An|Aan|Cc|Subject|Objet|Betreff):\s*(.*)$/i);
+    const scan = lines.slice(0, 24);
+    const FIELD = /^[\s>]*(Sent|Date|Envoyé|Gesendet|Verzonden|To|À|An|Aan|Cc|Subject|Objet|Betreff):\s*(.*)$/i;
+    const NEW_BLOCK = /^[\s>]*(?:From|De|Von|Van):/i;
+    for (let i = 0; i < scan.length; i++) {
+      const line = scan[i];
+      const field = line.match(FIELD);
       if (!line.trim()) { consumed += line.length + 1; continue; }
       if (!field) {
         // Outlook wraps long To/Cc lists onto additional lines.
         if (/^(To|À|An|Aan|Cc)$/i.test(previousField) && recipientContinuation && isRecipientContinuation(line)) {
-          recipients.push(...recipientEmails(line)); recipientContinuation = /[,;]\s*$/.test(line); consumed += line.length + 1; continue;
+          recipients.push(...recipientEmails(line)); recipientContinuation = recipientsContinue(line); consumed += line.length + 1; continue;
+        }
+        // A short stray line inside the block — a hidden element the provider
+        // left behind, an inline warning banner — used to reject the whole
+        // header and show two emails as one. It is skipped while the fields
+        // plainly continue underneath it.
+        const ahead = scan.slice(i + 1, i + 4);
+        const nextField = ahead.findIndex(next => FIELD.test(next));
+        const nextBlock = ahead.findIndex(next => NEW_BLOCK.test(next));
+        // Only inside this block: a field that belongs to the next email means
+        // this line is the message between them, not stray header noise.
+        if (stray < 2 && line.trim().length <= 80 && !NEW_BLOCK.test(line)
+          && nextField >= 0 && (nextBlock < 0 || nextField < nextBlock)) {
+          stray++; consumed += line.length + 1; continue;
         }
         break;
       }
       previousField = field[1];
-      recipientContinuation = /[,;]\s*$/.test(field[2]);
+      recipientContinuation = recipientsContinue(field[2]);
       if (/^(To|À|An|Aan|Cc)$/i.test(field[1])) recipients.push(...recipientEmails(field[2]));
       fields++;
       if (/^(Sent|Date|Envoyé|Gesendet|Verzonden)$/i.test(field[1])) date = field[2];
@@ -192,7 +245,27 @@ export function extractEmailBody(bodyEl: Element, currentUserEmail: string, thre
       header.scopeEnd = Math.min(p.text.length, ...unique.filter(parent => parent !== header && parent.start < header.start && parent.scopeEnd !== undefined && parent.scopeEnd > header.end).map(parent => parent.scopeEnd!));
     }
   }
-  function content(start: number, end: number) {
+  /**
+   * A header block whose fields wrapped in a shape the scanner stopped at
+   * leaves its tail — the rest of a recipient list, the Subject line — at the
+   * top of the message. Those lines belong to nobody's message, so a body is
+   * started past them.
+   */
+  function skipStrandedHeader(start: number, end: number): number {
+    let cursor = start, consumed = 0;
+    while (cursor < end && consumed < 8) {
+      const breakAt = p.text.indexOf('\n', cursor);
+      const stop = breakAt < 0 || breakAt > end ? end : breakAt;
+      const line = p.text.slice(cursor, stop);
+      if (!line.trim()) { cursor = stop + 1; continue; }
+      const field = /^[\s>]*(?:To|À|An|Aan|Cc|Bcc|Subject|Objet|Betreff|Sent|Date|Envoyé|Gesendet|Verzonden):/i.test(line);
+      if (!field && !isRecipientContinuation(line)) break;
+      cursor = stop + 1; consumed++;
+    }
+    return consumed ? Math.min(cursor, end) : start;
+  }
+  function content(rawStart: number, end: number) {
+    const start = skipStrandedHeader(rawStart, end);
     const exclusions = unique.filter(header => header.start >= start && header.start < end)
       .map(header => [header.start, Math.min(header.scopeEnd!, end)]);
     let cursor = start;
@@ -234,7 +307,34 @@ export function extractEmailBody(bodyEl: Element, currentUserEmail: string, thre
   // quoter instead — still a message that was certainly sent after them.
   const quoter = (i: number): string => i < 0 ? carrierId : kept[i] ? ids[i] : quoter(enclosing[i]);
   const history = drafts.map((m, i) => ({ ...m, quotedBy: quoter(enclosing[i]) })).filter((_, i) => kept[i]);
-  return { ...content(0, p.text.length), history: mergeMessages(history) };
+
+  /** Re-reads one recovered body, replacing it with what it actually holds. */
+  const rescan = (message: ParsedMessage): ParsedMessage[] => {
+    if (!message.bodyHtml || !UNSPLIT_HEADER.test(message.body)) return [message];
+    const holder = inert.createElement('div');
+    holder.innerHTML = message.bodyHtml;
+    const nested = extractEmailBody(holder, currentUserEmail, threadId, message.timestamp, message.id, depth + 1);
+    if (!nested.history.length) return [message];
+    const own = { ...message, body: nested.body, bodyHtml: nested.bodyHtml };
+    // An envelope holding nothing but the emails it quoted is not a message;
+    // what it quoted keeps its place under this one's own quoter.
+    return own.body.trim() || /<(?:table|img)\b/i.test(own.bodyHtml)
+      ? [own, ...nested.history]
+      : nested.history.map(m => ({ ...m, quotedBy: m.quotedBy === message.id ? message.quotedBy : m.quotedBy }));
+  };
+
+  let own = content(0, p.text.length);
+  let recovered = depth < MAX_RESCAN_DEPTH ? history.flatMap(rescan) : history;
+  if (depth < MAX_RESCAN_DEPTH && own.bodyHtml && UNSPLIT_HEADER.test(own.body)) {
+    const holder = inert.createElement('div');
+    holder.innerHTML = own.bodyHtml;
+    const nested = extractEmailBody(holder, currentUserEmail, threadId, anchorTimestamp, carrierId, depth + 1);
+    if (nested.history.length) {
+      own = { body: nested.body, bodyHtml: nested.bodyHtml };
+      recovered = [...recovered, ...nested.history];
+    }
+  }
+  return { ...own, history: mergeMessages(recovered) };
 }
 
 export function parseQuotedChain(body: Element, user: string, thread: string, anchor: string, carrier?: string): ParsedMessage[] {
