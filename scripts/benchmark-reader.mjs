@@ -1,5 +1,5 @@
 /** Synthetic Gmail CPU benchmark. No account or real emails are used. */
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -41,8 +41,9 @@ async function run(path, name) {
     return { name, inputHtmlBytes: html.length, messages: data[1].messages.length, elapsedMs: Date.now() - start, initialPageScriptMs: before.ScriptDuration * 1000, scrollBurstPageScriptMs: (after.ScriptDuration - before.ScriptDuration) * 1000, automaticExpandClicks: await page.evaluate(() => window.expandClicks || 0), statsBefore, statsAfter };
   } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }
 }
+const version = async path => JSON.parse(await readFile(join(path, 'manifest.json'), 'utf8')).version;
 const results = [];
-if (process.env.BASELINE_EXTENSION) results.push(await run(resolve(process.env.BASELINE_EXTENSION), 'baseline 1.3.1'));
-results.push(await run(resolve('dist'), 'incremental offscreen parser'));
-await mkdir('artifacts', { recursive: true }); await writeFile('artifacts/performance.json', JSON.stringify(results, null, 2));
+if (process.env.BASELINE_EXTENSION) results.push(await run(resolve(process.env.BASELINE_EXTENSION), `baseline ${await version(process.env.BASELINE_EXTENSION)}`));
+results.push(await run(resolve('dist'), `current ${await version('dist')}`));
+await mkdir('artifacts', { recursive: true }); await writeFile(process.env.BENCHMARK_OUTPUT || 'artifacts/performance.json', JSON.stringify(results, null, 2));
 console.log(JSON.stringify(results, null, 2));

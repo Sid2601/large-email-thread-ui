@@ -7,7 +7,7 @@ function imageKeys(html = ''): string[] {
     const raw = tag.match(/(?:src|data-tl-image-src)="([^"]*)"/i)?.[1] ?? '';
     const proxied = /#(https?:\/\/[^"\s]+)$/.exec(raw)?.[1];
     if (proxied) return proxied;
-    if (/^data:/i.test(raw)) return raw.slice(0, 128);
+    if (/^data:/i.test(raw)) return raw;
     if (/^cid:/i.test(raw)) return raw.toLowerCase();
     // A blob handle or bare proxy token is minted per copy and names no picture.
     if (/^blob:/i.test(raw) || /googleusercontent\.com\/proxy\//i.test(raw)) return '?';
@@ -19,8 +19,9 @@ export function imageIdentity(html = ''): string {
   return imageKeys(html).join('|');
 }
 // Every pairwise comparison re-reads both bodies; each is scanned once.
-const pictures = new WeakMap<ParsedMessage, string[]>();
-function picturesOf(message: ParsedMessage): string[] {
+type MessageBody = Pick<ParsedMessage, 'body' | 'bodyHtml'>;
+const pictures = new WeakMap<MessageBody, string[]>();
+function picturesOf(message: MessageBody): string[] {
   let value = pictures.get(message);
   if (value === undefined) { value = imageKeys(message.bodyHtml); pictures.set(message, value); }
   return value;
@@ -35,7 +36,7 @@ function picturesOf(message: ParsedMessage): string[] {
  * with some pictures missing. A key of '?' names a per-copy blob or proxy
  * handle that identifies no picture, so it matches anything.
  */
-function imagesConflict(a: ParsedMessage, b: ParsedMessage): boolean {
+function imagesConflict(a: MessageBody, b: MessageBody): boolean {
   const left = picturesOf(a), right = picturesOf(b);
   // A quoted copy that dropped the pictures is still the same message.
   if (!left.length || !right.length) return false;
@@ -79,7 +80,7 @@ export function normalizedBody(body: string): string {
 const SIGN_OFF = /\n\s*(?:--\s*$|(?:many\s+|kind(?:est)?\s+|best\s+|warm(?:est)?\s+|with\s+|thanks\s*(?:&|and)\s*){0,2}(?:regards|thanks|wishes|thank you)[,!.]?\s*$|sent from my (?:iphone|ipad|android))/im;
 /** Gmail truncates a long quoted body and says so in the message itself. */
 const CLIPPED = /\[message clipped\]|view entire message/i;
-function clipped(message: ParsedMessage): boolean {
+function clipped(message: MessageBody): boolean {
   return CLIPPED.test(message.body);
 }
 /**
@@ -92,7 +93,7 @@ function clipped(message: ParsedMessage): boolean {
 function withoutProviderNoise(text: string): string {
   return text
     .replace(/[\u24d8\u2139\ufe0f\u26a0\u276f\u25b6]/g, ' ')
-    .replace(/\[image unavailable:[^\]\n]{0,160}\]/gi, ' ')
+    .replace(/\[image(?: unavailable)?:[^\]\n]*\]/gi, ' ')
     .replace(/\bimage removed by sender\.?/gi, ' ')
     .replace(/\[\s*(?:external|extern|caution|suspicious)[^\]\n]{0,60}\]/gi, ' ')
     // A banner is often laid out as separate elements, so it reaches the text
@@ -110,7 +111,10 @@ function core(body: string): string {
   // The provider's own truncation notice is not the author's words, and the
   // ellipsis it leaves behind is not the author's punctuation.
   const clip = trimmed.search(CLIPPED);
-  return normalizedBody(clip >= 0 ? trimmed.slice(0, clip).replace(/[\s.\u2026]+$/, '') : trimmed);
+  const result = normalizedBody(clip >= 0 ? trimmed.slice(0, clip).replace(/[\s.\u2026]+$/, '') : trimmed);
+  // An image-only email has no prose to identify it. Keep its caption evidence
+  // and let the existing image/time/ambiguity guards decide whether it matches.
+  return result || normalizedBody(body);
 }
 // A long thread compares every pair repeatedly; each body is reduced once.
 const cores = new WeakMap<ParsedMessage, string>();
@@ -238,22 +242,55 @@ function timeRank(m: ParsedMessage): number {
   if (!Number.isFinite(Date.parse(m.timestamp))) return 0;
   return 1 + (m.timestampEstimated === true ? 0 : 1) + (m.timestampZoneUnknown === true ? 0 : 2);
 }
-function combine(primary: ParsedMessage, copy: ParsedMessage): ParsedMessage {
-  // Where the provider clipped one copy, the complete one is what was written.
-  // The clip notice itself adds length, so the authored words are compared.
-  if (clipped(primary) && !clipped(copy) && coreOf(copy).length > coreOf(primary).length) {
-    return combine({ ...primary, body: copy.body, bodyHtml: copy.bodyHtml }, { ...copy, body: primary.body, bodyHtml: primary.bodyHtml });
+// Variant comparisons retain signature words: an updated title or contact
+// detail is useful evidence; generated image captions and clipping are not.
+const presentations = new WeakMap<MessageBody, string>();
+function presentation(message: MessageBody): string {
+  let value = presentations.get(message);
+  if (value === undefined) {
+    const text = withoutProviderNoise(message.body);
+    const clip = text.search(CLIPPED);
+    value = normalizedBody(clip >= 0 ? text.slice(0, clip).replace(/[\s.\u2026]+$/, '') : text);
+    presentations.set(message, value);
   }
-  const variants = [...(primary.quotedVariants ?? []), ...(copy.quotedVariants ?? [])];
-  if (normalizedBody(primary.body) !== normalizedBody(copy.body) || imageIdentity(primary.bodyHtml) !== imageIdentity(copy.bodyHtml)) variants.push({ body: copy.body, bodyHtml: copy.bodyHtml });
-  const distinct = variants.filter((v, i) => (normalizedBody(v.body) !== normalizedBody(primary.body) || imageIdentity(v.bodyHtml) !== imageIdentity(primary.bodyHtml)) && variants.findIndex(other => normalizedBody(other.body) === normalizedBody(v.body) && imageIdentity(other.bodyHtml) === imageIdentity(v.bodyHtml)) === i);
+  return value;
+}
+function sameWords(a: MessageBody, b: MessageBody): boolean {
+  const x = presentation(a), y = presentation(b);
+  return x === y || (Math.min(x.length, y.length) >= SPECIFIC_ENOUGH
+    && ((clipped(a) && y.startsWith(x)) || (clipped(b) && x.startsWith(y))));
+}
+function samePresentation(a: MessageBody, b: MessageBody): boolean {
+  return sameWords(a, b) && !imagesConflict(a, b);
+}
+function richer(candidate: MessageBody, current: MessageBody): boolean {
+  if (!samePresentation(candidate, current)) return false;
+  // Never replace a complete body with a truncated one just for extra logos.
+  if (clipped(candidate) !== clipped(current)) return !clipped(candidate);
+  const a = picturesOf(candidate), b = picturesOf(current);
+  return a.length > b.length || (a.length === b.length
+    && a.filter(key => key !== '?').length > b.filter(key => key !== '?').length);
+}
+function combine(primary: ParsedMessage, copy: ParsedMessage): ParsedMessage {
+  const candidates: MessageBody[] = [primary, copy, ...(primary.quotedVariants ?? []), ...(copy.quotedVariants ?? [])];
+  let display: MessageBody = primary;
+  for (const candidate of candidates) if (richer(candidate, display)) display = candidate;
+  const distinct: MessageBody[] = [];
+  for (const candidate of candidates) {
+    // A clipped copy may be the only place a picture survives. If the full
+    // text cannot replace that picture, keep the copy available for inspection.
+    if (samePresentation(candidate, display) && picturesOf(candidate).length <= picturesOf(display).length) continue;
+    const previous = distinct.findIndex(other => samePresentation(other, candidate));
+    if (previous < 0) distinct.push({ body: candidate.body, bodyHtml: candidate.bodyHtml });
+    else if (richer(candidate, distinct[previous])) distinct[previous] = { body: candidate.body, bodyHtml: candidate.bodyHtml };
+  }
   const attachments = [...(primary.attachments ?? []), ...(copy.attachments ?? [])];
   const recipients = Array.from(new Set([...(primary.recipients ?? []), ...(copy.recipients ?? [])]));
-  return { ...primary,
+  return { ...primary, body: display.body, bodyHtml: display.bodyHtml,
     ...(timeRank(copy) > timeRank(primary)
       ? { timestamp: copy.timestamp, timestampEstimated: copy.timestampEstimated === true, timestampZoneUnknown: copy.timestampZoneUnknown === true }
       : {}),
-    ...(distinct.length ? { quotedVariants: distinct } : {}),
+    quotedVariants: distinct.length ? distinct : undefined,
     ...(recipients.length ? { recipients } : {}),
     ...(attachments.length ? { attachments: attachments.filter((a, i) => attachments.findIndex(b => a.name === b.name && a.sizeLabel === b.sizeLabel && a.downloadUrl === b.downloadUrl) === i) } : {}),
   };
@@ -318,7 +355,7 @@ function reconcile(messages: ParsedMessage[], offsets: number[]) {
       // Copies that stay ambiguous (two real identical approvals) keep history.
       if (preferred.length === 1) chosen = preferred[0];
     }
-    if (chosen < 0) { place.set(msg, result.length); result.push({ ...msg }); continue; }
+    if (chosen < 0) { place.set(msg, result.length); result.push(msg.quotedVariants?.length ? combine(msg, msg) : { ...msg }); continue; }
     place.set(msg, chosen);
     const target = result[chosen];
     const offset = zoneShifted(target, msg) ? zoneOffset(target, msg) : undefined;

@@ -1,0 +1,15 @@
+{
+  "version": "1.6.3",
+  "input": "Two user-supplied masked exports, read locally without modification",
+  "reconstruction": "Masked image labels restored to img elements with their surviving alt text and unknown per-copy blob identities. Original URLs, bytes, provider IDs and live DOM are not present in the exports.",
+  "beforeExpansion": {
+    "inputMessages": 19,
+    "outputMessages": 19,
+    "remainingQuotedVariants": 0
+  },
+  "afterExpansion": {
+    "inputMessages": 21,
+    "outputMessages": 19,
+    "remainingQuotedVariants": 0
+  }
+}

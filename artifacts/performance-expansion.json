@@ -1,0 +1,56 @@
+[
+  {
+    "name": "baseline 1.6.2",
+    "inputHtmlBytes": 1043271,
+    "messages": 40,
+    "elapsedMs": 11775,
+    "initialPageScriptMs": 4.445,
+    "scrollBurstPageScriptMs": 0.9579999999999996,
+    "automaticExpandClicks": 0,
+    "statsBefore": {
+      "batches": 10,
+      "snapshots": 40,
+      "scans": 1,
+      "snapshotMs": 43.200000166893005,
+      "maxSnapshotMs": 2.700000047683716,
+      "ignoredMutations": 0,
+      "pending": 0
+    },
+    "statsAfter": {
+      "batches": 10,
+      "snapshots": 40,
+      "scans": 1,
+      "snapshotMs": 43.200000166893005,
+      "maxSnapshotMs": 2.700000047683716,
+      "ignoredMutations": 5,
+      "pending": 0
+    }
+  },
+  {
+    "name": "current 1.6.3",
+    "inputHtmlBytes": 1043271,
+    "messages": 40,
+    "elapsedMs": 11772,
+    "initialPageScriptMs": 5.375,
+    "scrollBurstPageScriptMs": 1.0690000000000004,
+    "automaticExpandClicks": 0,
+    "statsBefore": {
+      "batches": 10,
+      "snapshots": 40,
+      "scans": 1,
+      "snapshotMs": 44.50000011920929,
+      "maxSnapshotMs": 3,
+      "ignoredMutations": 0,
+      "pending": 0
+    },
+    "statsAfter": {
+      "batches": 10,
+      "snapshots": 40,
+      "scans": 1,
+      "snapshotMs": 44.50000011920929,
+      "maxSnapshotMs": 3,
+      "ignoredMutations": 5,
+      "pending": 0
+    }
+  }
+]

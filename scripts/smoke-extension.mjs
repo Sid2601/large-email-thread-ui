@@ -27,7 +27,7 @@ try {
   const localClock = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   const carolBody = '<p>Adding you for visibility.</p><p>The rollout covers the northern region first, and the budget table below is the version finance agreed last week. Please raise anything that looks wrong before Friday.</p>';
   const history = quote('Alice', 'Sep 7, 2026', '<p>Budget approved.</p><table><tr><th>Item</th><th>Budget</th></tr><tr><td>Hosting</td><td>$500</td></tr></table>' + quote('Bob', 'Sep 6, 2026', '<p>Initial proposal.</p>'));
-  const html = `<main role="main"><span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Enterprise rollout · joined midway</h2><div data-message-id="direct-1"><span class="gD" email="carol@example.com" name="Carol">Carol</span><span class="g2" email="new@example.com"></span><span class="g3" data-tooltip="Sep 8, 10:00 AM UTC"></span><div class="a3s aiL">${carolBody}<div hidden style="display:none">${history}</div></div><div class="aZo" data-tooltip="report.txt"><span class="aV3">report.txt</span><span class="aV7">12 B</span><a href="https://mail.google.com/mail/u/0/?view=att&amp;attid=1">Download</a></div></div><div data-message-id="direct-2"><span class="gD" email="dave@example.com" name="Dave">Dave</span><span class="g3" data-tooltip="2026-09-09T10:00:00Z"></span><div class="a3s aiL"><p>OK</p>${attribution('Carol', localClock(carolSentAt - 4.5 * 3600 * 1000), carolBody + history)}</div></div></main>`;
+  const html = `<main role="main"><span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Enterprise rollout · joined midway</h2><div data-message-id="direct-1"><span class="gD" email="carol@example.com" name="Carol">Carol</span><span class="g2" email="new@example.com"></span><span class="g3" data-tooltip="2026-09-08T10:00:00Z"></span><div class="a3s aiL">${carolBody}<div hidden style="display:none">${history}</div></div><div class="aZo" data-tooltip="report.txt"><span class="aV3">report.txt</span><span class="aV7">12 B</span><a href="https://mail.google.com/mail/u/0/?view=att&amp;attid=1">Download</a></div></div><div data-message-id="direct-2"><span class="gD" email="dave@example.com" name="Dave">Dave</span><span class="g3" data-tooltip="2026-09-09T10:00:00Z"></span><div class="a3s aiL"><p>OK</p>${attribution('Carol', localClock(carolSentAt - 4.5 * 3600 * 1000), carolBody + history)}</div></div></main>`;
   await context.route('https://mail.google.com/**', route => route.fulfill(route.request().url().includes('view=att') ? { contentType: 'text/plain', body: 'Report data' } : { contentType: 'text/html; charset=utf-8', body: html }));
   await context.route('https://mail.google.com/inline-test.png', route => route.fulfill({ contentType: 'image/png', body: imageBytes }));
   const mail = await context.newPage();
@@ -179,9 +179,57 @@ try {
   await offlineImages.screenshot({ path: 'artifacts/inline-images-export.png', fullPage: true });
   await offlineImages.close();
   await worker.evaluate(tabId => chrome.tabs.update(tabId, { active: true }), mailTabId);
+  // Expanding an original rehosts images and changes alt captions in all its
+  // nested copies. Several later invitations must still show one timeline.
+  const members = ['Alice', 'Bob', 'Carol', 'Dana', 'Evan'];
+  const expansionBody = (i, expanded) => `<p>Transfer update ${i}: Please review the twelve warehouse balances and confirm the reconciliation before the next scheduled delivery.</p><img src="https://mail.google.com/inline-test.png" alt="${expanded ? 'image.png' : 'Inline image'}"><p>Kind regards</p><p>${members[i]}</p>`;
+  const histories = [], expandedBodies = [];
+  let earlier = '';
+  for (let i = 0; i < members.length; i++) {
+    histories.push(expansionBody(i, false) + earlier);
+    expandedBodies.push(histories[i].replaceAll('alt="Inline image"', 'alt="image.png"'));
+    earlier = quote(members[i], `Sep ${6 + i}, 2026`, histories[i]);
+  }
+  const expansionMarkup = `<span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Stable expansion verification</h2>` + members.map((name, i) => `<div data-message-id="expand-${i}"><span class="gD" email="${name.toLowerCase()}@example.com" name="${name}">${name}</span>${i === 4 ? '<span class="g2" email="new@example.com"></span>' : ''}<span class="g3" data-tooltip="2026-09-${String(6 + i).padStart(2, '0')}T10:00:00Z"></span>${i === 4 ? `<div class="a3s aiL">${histories[i]}</div>` : `<button id="open-${i}">Open email ${i}</button>`}</div>`).join('');
+  await mail.evaluate(({ markup, bodies }) => {
+    document.querySelector('main').innerHTML = markup;
+    bodies.slice(0, 4).forEach((html, i) => document.getElementById(`open-${i}`).onclick = () => {
+      const container = document.querySelector(`[data-message-id="expand-${i}"]`);
+      const existing = container.querySelector('.a3s');
+      if (existing) existing.remove();
+      else { const body = document.createElement('div'); body.className = 'a3s aiL'; body.innerHTML = html; container.append(body); }
+    });
+    location.hash = '#inbox/stableexpansion123';
+  }, { markup: expansionMarkup, bodies: expandedBodies });
+  await panel.getByText('Stable expansion verification', { exact: true }).waitFor();
+  await panel.getByText('5 messages', { exact: true }).waitFor();
+  await panel.getByText('You joined here · first visible inclusion', { exact: true }).waitFor();
+  for (const i of [2, 0, 3, 1]) {
+    const before = await worker.evaluate(tabId => chrome.tabs.sendMessage(tabId, { type: 'READER_STATS' }), mailTabId);
+    await mail.getByRole('button', { name: `Open email ${i}`, exact: true }).click();
+    // Await the offscreen result, not just the reader's snapshot dispatch.
+    const expectedDirect = 2 + [2, 0, 3, 1].indexOf(i);
+    let observed;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      observed = await worker.evaluate(async () => Object.values(await chrome.storage.session.get(null)).find(data => data?.subject === 'Stable expansion verification'));
+      if (observed?.messages.filter(m => m.id.startsWith('expand-')).length === expectedDirect) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.equal(observed?.messages.length, 5);
+    assert.equal(observed?.messages.filter(m => m.id.startsWith('expand-')).length, expectedDirect);
+    const after = await worker.evaluate(tabId => chrome.tabs.sendMessage(tabId, { type: 'READER_STATS' }), mailTabId);
+    assert.equal(after.snapshots - before.snapshots, 1, 'opening an email snapshots only its newly available body');
+    await panel.getByText('5 messages', { exact: true }).waitFor();
+    assert.equal(await panel.getByText(/Quoted copy differs/).count(), 0, 'expansion must not invent edited variants');
+  }
+  const expansionSaved = await worker.evaluate(async () => Object.values(await chrome.storage.session.get(null)).find(data => data?.subject === 'Stable expansion verification'));
+  assert.equal(expansionSaved.messages.length, 5);
+  assert.deepEqual(expansionSaved.messages.map(m => m.body.match(/Transfer update \d/)?.[0]), members.map((_, i) => `Transfer update ${i}`));
+  assert.ok(expansionSaved.messages.every(m => !m.quotedVariants?.length && m.bodyHtml.includes('<img')));
+  await panel.screenshot({ path: 'artifacts/stable-expansion.png', fullPage: true });
   // Inbox navigation must clear mail rather than leaving stale content visible.
   await mail.evaluate(() => { location.hash = '#inbox'; });
-  await panel.getByText('2 messages', { exact: true }).waitFor({ state: 'detached' });
+  await panel.getByText('5 messages', { exact: true }).waitFor({ state: 'detached' });
   const exportedPage = await context.newPage();
   await exportedPage.goto(pathToFileURL(exportPath).href);
   assert.equal(await exportedPage.locator('article').count(), 4);
@@ -190,5 +238,5 @@ try {
   await exportedPage.screenshot({ path: 'artifacts/conversation-export.png', fullPage: true });
   assert.deepEqual(errors, []);
   assert.ok(!panelLogs.some(text => text.includes('cross-world extension resource mismatch')), 'no cross-world preload warnings');
-  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone full-conversation export during search, identity-masked export, table, rich search, local file save/reload/download/remove, HTTPS/blob inline images, full-size viewer, offline embedded images, incremental body updates/replacement, navigation clearing; no page errors or cross-world preload warnings.');
+  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone full-conversation export during search, identity-masked export, table, rich search, local file save/reload/download/remove, HTTPS/blob inline images, full-size viewer, offline embedded images, incremental body updates/replacement, stable five-person expansion with images, navigation clearing; no page errors or cross-world preload warnings.');
 } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }
