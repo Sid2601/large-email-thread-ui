@@ -140,6 +140,12 @@ export function sanitizeEmailHtml(html: string): string {
   const tmp = new DOMParser().parseFromString('', 'text/html').createElement('div');
   tmp.innerHTML = html;
   tmp.querySelectorAll('script,style,iframe,object,embed,form,input,button,link,meta,svg,math').forEach(el => el.remove());
+  // An emptied quote shell is left behind when a segment ends at a nested
+  // quote. It holds nothing to read and renders as a bare indent rule, so it
+  // is dropped innermost-first; a quotation with any content is kept.
+  for (const quote of Array.from(tmp.querySelectorAll('blockquote')).reverse()) {
+    if (!quote.textContent?.trim() && !quote.querySelector('img')) quote.remove();
+  }
   for (const el of Array.from(tmp.querySelectorAll('*')).reverse()) {
     const tag = el.tagName.toLowerCase();
     if (tag === 'img') {

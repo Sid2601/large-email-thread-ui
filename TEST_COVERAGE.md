@@ -1,6 +1,6 @@
 # Enterprise conversation test coverage
 
-Release 1.5.1. **150 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
+Release 1.6.2. **185 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
 
 | Area | Cases covered |
 |---|---|
@@ -25,6 +25,14 @@ Release 1.5.1. **150 automated tests** plus the real Chromium extension smoke te
 | Browser image flow | HTTPS and source-tab blob images render at full natural dimensions; full-size dialog; offline HTML embeds both sources; updates/replaced body nodes retain pictures |
 | Adapter stability | Gmail identity/date stable across edits; Outlook fallback IDs stable; nested Outlook wrappers produce one message |
 | Performance | Synthetic 40-message ~1 MB benchmark; no automatic expand-all; unrelated toolbar/scroll mutations cause zero additional snapshots; a body edit snapshots only its owning message |
+| Deep quote nesting | Eight-level Outlook indentation recovered without rebuilt quote wrappers, an author's own quotation kept, empty quote shells dropped innermost-first |
+| Provider-trimmed copies | Unequal signature logos merged and a differing picture kept apart; `Thanks & Regards` treated as the end of the authored text; a Gmail-clipped copy merged into the complete wording with the clipped copy kept as a variant, a body that merely stops earlier not merged, a clipped copy not matched to a different message; a specific sentence quoted against a provider-dated email merged with its attachments, a brief acknowledgement and an unanchored pair kept apart |
+| Unread header blocks | Recipient lists wrapped between a name and its address; stranded recipient/Subject remnants skipped at the top of a body; a stray line inside a block skipped while its fields continue, but never across into the next email; a second pass splitting a body that still holds a complete header block |
+| Provider chrome | Tenant external-sender banners laid out one word to a line, `[EXTERNAL]` tags and unavailable-picture captions ignored when matching and kept when shown |
+| Clock skew | A quarter-hour offset plus minutes of client/server skew matched; word-for-word copies minutes apart treated as one message |
+| Reply order | An answer whose zoneless clock reads earlier than the question it quotes is shown after it, both marked as chain-placed |
+| Forwarding | A carrier naming who passed the thread on and to whom, a long recipient list abbreviated, no recipients readable, and an email that did add words kept as an ordinary message |
+| Masked exports | One placeholder per person across headers, bodies, signatures, recipients and quoted variants; body-only addresses; employer domains; capitalised short names masked while lowercase words are kept; dates, quantities and reference numbers protected from the phone heuristic; renumbered ids keeping their references; no image bytes, attachment URLs or mail-tab reference; preserved wording, tables, order, timestamps and recovery labels; masked filename |
 | Extension integration | Real content script/service worker/panel flow, tab isolation, inbox clearing, no preload mismatch warnings, synthetic missing-year near-copy example, timezone-shifted quoted copy, forward-only receiving event |
 
 ## Commands

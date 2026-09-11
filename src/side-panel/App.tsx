@@ -12,7 +12,7 @@ import { EmptyState } from './components/EmptyState';
 
 export default function App() {
   const { threadData, isLoading } = useThreadData();
-  const [exporting, setExporting] = useState<'' | 'full' | 'light'>('');
+  const [exporting, setExporting] = useState<'' | 'full' | 'light' | 'masked'>('');
   const [exportError, setExportError] = useState('');
   useEffect(() => setExportError(''), [threadData?.threadId]);
   const { selectedEmail, selectSender, filteredMessages: participantFiltered } = useParticipantFilter(threadData);
@@ -76,6 +76,19 @@ export default function App() {
                 finally { setExporting(''); }
               }}
             >{exporting === 'light' ? 'Preparing file…' : '↓ Text only (no images)'}</button>
+            <button
+              type="button"
+              className="mt-2 mb-1 ml-2 rounded border border-amber-300 dark:border-amber-700 px-2 py-1.5 text-amber-800 dark:text-amber-300 font-medium hover:bg-amber-50 dark:hover:bg-gray-800 disabled:opacity-60"
+              title="Download the same messages with every name, email address, company domain, phone number and link replaced by a consistent placeholder such as Person 1. Images and attachment data are not included. Message wording, order, timestamps and formatting are unchanged, so the file is safe to share for diagnosis."
+              disabled={exporting !== ''}
+              onClick={async () => {
+                setExporting('masked');
+                setExportError('');
+                try { await downloadConversation(threadData, { mask: true }); }
+                catch { setExportError('Could not export the masked conversation. Please try again.'); }
+                finally { setExporting(''); }
+              }}
+            >{exporting === 'masked' ? 'Masking identities…' : '↓ Masked copy (share-safe)'}</button>
             {threadData.client === 'gmail' && <button className="ml-2 text-blue-700 dark:text-blue-300 underline" title="Only if older history is missing: expand collapsed emails in Gmail and read them." onClick={() => { if (threadData.sourceTabId !== undefined) void chrome.tabs.sendMessage(threadData.sourceTabId, { type: 'EXPAND_THREAD' }).catch(() => setExportError('Refresh the original mail tab to read collapsed emails.')); }}>Read collapsed emails</button>}
             {exportError && <p role="alert" className="text-red-600">{exportError}</p>}
             <p className="mt-1">Includes history quoted in the emails available here. Earlier messages or files omitted by the sender cannot be recovered.</p>

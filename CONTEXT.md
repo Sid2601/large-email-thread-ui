@@ -1,6 +1,6 @@
 # ThreadLens project context
 
-Updated 2026-09-10. Current source version: **1.5.1**.
+Updated 2026-09-11. Current source version: **1.6.2**.
 
 ## Goal
 
@@ -46,7 +46,9 @@ npm test
 npm run build
 ```
 
-`package.json` drives the generated manifest/UI version. Load `dist/` as an unpacked Chrome extension. A ZIP of its contents is provided in `releases/`.
+Or `npm run release` for all four in order, stopping at the first failure.
+
+`package.json` drives the generated manifest/UI version. Load `dist/` as an unpacked Chrome extension, or the `releases/threadlens-<version>/` folder the release command extracts. A ZIP of the same contents, its SHA-256 and `INSTALL.txt` are written beside it. `scripts/release.mjs` re-runs itself on an nvm-installed Node 22 when the shell's default node is older than the test runner needs.
 
 Browser smoke test requires an available Playwright installation and its Chromium browser:
 
@@ -129,3 +131,72 @@ A Sheffield North export placed Jay's `09:04` explanation before the `13:28` mes
 - Where nesting overrules the clocks, both messages carry `orderedByQuote`; the panel tooltip and the export label them **Placed by the quoted reply chain**, since a `13:28` shown above an `09:04` otherwise reads as a new defect.
 
 Displayed times are unchanged and remain the raw quoted clocks in mixed zones. Ordering is now correct; the instants stay unrecoverable unless a message appears in two chains, which the existing offset voting already handles.
+
+## 1.6.0 identity-masked export
+
+A third export button, **Masked copy (share-safe)**, writes the conversation with its identities replaced so a thread can be handed to someone diagnosing a parsing problem without disclosing who it is about.
+
+- `src/side-panel/export/mask.ts` holds `IdentityMasker` and `maskThread`. Header identities are seeded from senders, recipients, participants and the signed-in address before any body is read, so a name mentioned in prose resolves to the person whose header it belongs to. One real value always maps to one placeholder: `Person 1`, `person1@company1.example`, `Company 2`, `[phone-1]`, `[number-1]`, `image-1.png`, `masked-1`.
+- Masked: sender names and addresses, addresses found anywhere in text, learned name phrases and their parts, employer domains taken from correspondents' own addresses, phone and long reference numbers, link hosts/paths (query strings dropped), image sources, attachment names, message ids and the thread id. A capitalised opening of a known name — `Sid`, `Elevation` — is masked case-sensitively, which catches greetings and run-together domains while leaving ordinary lowercase words readable. Consumer mail hosts stay as they are; they identify nobody.
+- Unmasked by design: message wording, formatting, tables, order, timestamps, timezone/recovery labels, quoted variants and participation notes. The masked copy must still reproduce the problem it was exported for, so dates and quantities are protected from the phone-number heuristic.
+- No image bytes are ever written: a picture can show a face, a signature or a letterhead. Every image becomes a positioned neutral placeholder, attachment URLs are cleared, and `sourceTabId` is dropped so the copy can fetch nothing from the mail tab. The placeholder map lives only in the `IdentityMasker` instance and is never serialized into the file.
+- `conversationHtml(thread, exportedAt, { masked: true })` adds a visible banner; `downloadConversation(thread, { mask: true })` masks, forces the no-image path and saves `ThreadLens-<subject>-<date>-masked.html` from the masked subject.
+- `tests/masked-export.ts` adds 11 checks: no real name/address/domain/phone/token/id survives, one person maps to one placeholder across headers and bodies, structure/dates/labels are preserved, ids are renumbered with their references intact, images and attachment URLs are absent, body-only addresses are masked, capitalised short forms are masked while lowercase words are not, dates and quantities are not treated as phone numbers, a company written run-together as one word is still masked, and the download is named as a masked copy. The Chromium smoke exports a masked copy and asserts no synthetic identity survives it.
+
+Limits: masking is a strong default, not a guarantee. A nickname sharing no opening letters with the real name, an identity visible only inside a picture, and a company named in prose but never in an address or domain can survive. The file should be read before it is sent anywhere.
+
+## 1.6.1 deep nesting and provider-trimmed duplicates
+
+Diagnosed from the user's identity-masked export of a fourteen-entry enterprise thread (`manual_test/`, read locally; nothing from it was copied into fixtures). Two reported symptoms turned out to have four distinct causes, each fixed where it arises.
+
+### 1. A column of vertical rules before deeply nested messages
+
+**Cause.** `slice()` in `quoted-chain-parser.ts` restores the ancestors `Range.cloneContents()` drops, so a single-cell table or a bold span survives extraction. Outlook indents each reply in a plain `<blockquote style="padding-left:6pt">` with no `gmail_quote` class, and only `.gmail_quote` was excluded from that restoration. An eight-reply thread therefore rebuilt eight quote wrappers around the oldest message, and both the panel and the export draw a left rule on every `blockquote` — the stack of empty vertical lines in the screenshot. The mail's own blockquotes carried only padding; the rules came from ThreadLens's stylesheets.
+
+**Method.** Exclude every `blockquote`/`.gmail_quote` ancestor from restoration, not just Gmail's. A wrapper enclosing the *whole* extracted segment is the indent the quoting client added; an author's own quotation sits inside their message and is cloned with the range, so it is untouched. `sanitizeEmailHtml` additionally drops, innermost-first, any `blockquote` holding no text and no picture — the shell a split leaves behind when a segment ends at a nested quote.
+
+### 2. One email appearing twice, once with attachments
+
+Four separate rules were keeping copies of one message apart. All four were relaxed with evidence, not loosened generally.
+
+- **Unequal picture counts.** `imagesConflict` treated a different number of inline pictures as different pictures, and a quoted copy routinely keeps fewer signature logos than the original (7 against 3 in this thread). It now conflicts only when the copies actually disagree about a picture: the shorter list must be the longer one with some pictures missing, where `'?'` (a per-copy blob or proxy handle that names no picture) matches anything. Genuinely different pictures still keep copies apart.
+- **A sign-off it did not recognise.** `core()` trims the signature before matching, but its pattern knew `Regards`, `Kind regards`, `Many thanks` and `Thanks` — not `Thanks & Regards`, the house style in this thread. The whole contact block was therefore part of the compared text, so copies that kept different amounts of it never matched. The pattern now covers `many/kind/kindest/best/warm/warmest/with` and `thanks &|and` before `regards|thanks|wishes|thank you`.
+- **Gmail's own truncation.** Gmail clips a long quoted body and writes `[Message clipped] View entire message` into the message. That notice and its trailing ellipsis are no longer compared as the author's words, and a copy carrying the notice may match a longer copy that *starts with* it — the provider is stating the copy is the beginning of that message. Only the provider's notice licenses this: a body that merely stops earlier still does not match. When such copies merge, the complete wording is displayed and the clipped copy is kept as an inspectable variant.
+- **A short email quoted from another timezone.** A word-for-word copy whose gap from its counterpart is offset-shaped previously needed 160 characters, or an offset already proven by another pair in the thread. The reported email — *"I've checked and currently there are no in-progress warehouse transfers"*, 85 characters, quoted 4.5 hours away by a UK client and read in IST — met neither, so it showed twice: once from the mailbox with its two attachments, once from the quote without them. A copy quoted against an email the mailbox itself holds (`source !== 'quoted'` with a provider header) and specific enough to be one message (40 characters) is now accepted. The reasoning: a second email repeating those words exactly would be in this same mailbox, and when it is, the existing ambiguity rule keeps both. Copies with no provider-dated counterpart, and brief acknowledgements below 40 characters, are unchanged.
+
+Attachments were never compared, so the attachment asymmetry was a symptom rather than a cause; `combine` already unions attachments, and the surviving entry keeps `image005.png` and `image006.png` with the provider's own timestamp.
+
+**Verification.** The masked export was replayed through reconciliation locally: the fourteen entries reduce to twelve, the two reported pairs collapse, the note keeps both attachments and its provider clock, and no other message merged. Twelve synthetic regressions cover the same shapes in `tests/regressions.ts` — eight-deep Outlook nesting, an author's own quotation, empty quote shells, dropped signature logos, a genuinely different picture, attachments across a zone-shifted merge, `Thanks & Regards`, a clipped copy and its boundaries, and a brief acknowledgement that must stay separate. The suite is 173 tests. `scripts/smoke-extension.mjs` was not extended for these cases and its 1.6.0 masked-export step remains unrun here: Playwright is not installed on this machine.
+
+Limits unchanged: where two copies address the same picture differently *and* identify it (distinct `cid:` values in both), an unequal count still reads as different pictures. A clipped copy that Gmail truncated mid-word does not prefix-match. Identical short emails genuinely sent twice, where only one is in the mailbox, can now merge.
+
+## 1.6.2 provider chrome, unread header blocks and reply order
+
+Diagnosed from the user's second identity-masked export of the same thread (25 entries after expanding collapsed emails; read locally, nothing copied into fixtures). Three reported symptoms — messages still duplicated, two emails shown as one, and an answer placed before its question — came from five causes.
+
+### 1. Copies of one email still shown twice
+
+Each cause was found by replaying the real export through reconciliation and reading what actually differed between the copies.
+
+- **Pictures decided it.** The same seven-picture signature reached the thread three ways: seven proxied URLs, seven `Image removed by sender` placeholders, and six of those URLs plus one re-rendered copy. Any difference in count or address counted as different pictures, which kept three copies of one email apart. Pictures are now weak evidence: they cannot outvote a run of word-for-word identical text of at least 40 characters, but they still separate copies whose wording only resembles each other, and whichever copy differs is kept as an inspectable variant.
+- **Clock skew on top of the offset.** A quoted `Sent:` line is the sending client's own clock and a provider header is the server's, so copies sat 4 h 34 m apart — a 4½-hour timezone offset plus four minutes of skew. Offset-shaped gaps now tolerate up to five minutes of skew (real offsets are quarter-hour multiples, so minutes never turn one offset into another), and word-for-word copies whose clocks differ only by minutes are matched as the same time.
+- **A tenant banner on one copy only.** The external-sender warning (`ⓘ External email ❯`, laid out one word to a line) is stamped on the copy that arrived from outside but not on the copy its author quoted. That banner, `[EXTERNAL]` tags, caution/originated-outside notices and `[Image unavailable: …]` captions are now ignored when comparing bodies. They are still shown; only the comparison ignores them.
+
+### 2. Two emails shown as one, and header lines stranded on top of a message
+
+- **Wrapped recipient lists.** Outlook wraps a long To/Cc list at any column, including between a display name and its own address. The scanner stopped at the first line it could not read, so the rest of the list and the `Subject:` line were left at the top of the message body — and a body polluted that way never matches its clean copy either. A continuation line is now accepted when its remainder is a display name (capitalised words, not prose), and the list is known to continue when a line ends with a separator *or* with a name whose address wrapped.
+- **Stray lines inside a header block.** One unreadable line — a hidden element the provider left behind, an inline banner — rejected the whole block, so the quoted email stayed inside its parent and two emails appeared as one. Up to two short stray lines are now skipped while the fields plainly continue beneath them, and never when the next field belongs to the following email.
+- **A second pass.** Whatever the provider shape, a recovered body that still holds a complete `From:`/`Sent:` block is read again — the second pass sees the rebuilt, sanitised markup rather than the provider's. On the real export this recovered four emails that had been hidden inside other messages, including one that appeared nowhere else in the thread.
+- **Stranded remnants are skipped.** A body that begins with recipient-list or `Subject:` lines now starts past them, so an old cache or an unknown header shape cannot leave header text at the top of a message.
+
+### 3. An answer placed before its question
+
+The quote chain already ordered messages, and the fix was upstream: the question existed twice (a provider-dated copy and a zoneless quoted copy 4 h 34 m away) and the two did not merge, so only the quoted copy carried the "was answered by" link while the real one floated free of it. Once skew-tolerant matching merged them, the chain edge bound the surviving message and the answer moved after the question it quoted, both marked *Placed by the quoted reply chain*. A regression now asserts this end to end: an answer whose own clock reads earlier than the question it quotes is still shown after it.
+
+### 4. Forwarding is announced rather than shown as an empty message
+
+An email that adds no words of its own is an event, not a message. `src/offscreen/parser.ts` now writes `<name> passed this conversation on to <recipients> without adding a message.` (a long list becomes "a, b and 2 others"), and `MessageBubble` renders a carrier as one centred line instead of an empty bubble. The event is kept because the participation marker depends on it.
+
+**Verification.** Replaying the real export end to end — re-parsing every body, then reconciling — goes from 25 entries with duplicates and two merged-together emails to 23 distinct messages, four of them recovered by the second pass, with the reply chain ordering the pair whose clocks disagree. Fourteen synthetic regressions cover the shapes: wrapped recipient lists, stranded remnants, stray lines in a header block, skew plus offset, tenant banners, answer-before-question, picture evidence at both strengths, and the carrier notice. The suite is 185 tests. The Chromium smoke was updated for the carrier wording but, as in 1.6.0 and 1.6.1, could not be run here — Playwright is not installed on this machine.
+
+Limits: the exact provider shape that defeated the first pass in the live DOM is unknown — the second pass is a safety net that catches it whatever it was, verified against the real export. Two identical short emails genuinely sent minutes apart can now merge. A banner phrased unlike any of the known forms is still compared as if the author wrote it.

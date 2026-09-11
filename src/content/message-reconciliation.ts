@@ -25,13 +25,26 @@ function picturesOf(message: ParsedMessage): string[] {
   if (value === undefined) { value = imageKeys(message.bodyHtml); pictures.set(message, value); }
   return value;
 }
-/** Different pictures, not merely differently addressed ones. */
+/**
+ * Different pictures, not merely differently addressed or partly dropped ones.
+ *
+ * A quoting client keeps what it can: a signature block routinely arrives with
+ * some of its logos and a later copy with fewer, so an unequal count is not
+ * evidence of a different message. The copies conflict only when the pictures
+ * they do hold disagree — that is, when the shorter list is not the longer one
+ * with some pictures missing. A key of '?' names a per-copy blob or proxy
+ * handle that identifies no picture, so it matches anything.
+ */
 function imagesConflict(a: ParsedMessage, b: ParsedMessage): boolean {
   const left = picturesOf(a), right = picturesOf(b);
   // A quoted copy that dropped the pictures is still the same message.
   if (!left.length || !right.length) return false;
-  if (left.length !== right.length) return true;
-  return left.some((key, i) => key !== '?' && right[i] !== '?' && key !== right[i]);
+  const [fewer, more] = left.length <= right.length ? [left, right] : [right, left];
+  let cursor = 0;
+  for (const key of more) {
+    if (cursor < fewer.length && (key === '?' || fewer[cursor] === '?' || key === fewer[cursor])) cursor++;
+  }
+  return cursor < fewer.length;
 }
 function nameKey(sender: Sender): string {
   return sender.name.toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -57,11 +70,47 @@ function sameAuthor(a: ParsedMessage, b: ParsedMessage): boolean {
 export function normalizedBody(body: string): string {
   return body.replace(/^\s*>+\s?/gm, '').normalize('NFKC').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 }
+/**
+ * A sign-off ends what the author wrote. Enterprise mail reaches for more forms
+ * of it than "Regards": "Thanks & Regards" over a block of contact details is
+ * the house style of whole companies, and a copy that keeps a different amount
+ * of that block is still the same message.
+ */
+const SIGN_OFF = /\n\s*(?:--\s*$|(?:many\s+|kind(?:est)?\s+|best\s+|warm(?:est)?\s+|with\s+|thanks\s*(?:&|and)\s*){0,2}(?:regards|thanks|wishes|thank you)[,!.]?\s*$|sent from my (?:iphone|ipad|android))/im;
+/** Gmail truncates a long quoted body and says so in the message itself. */
+const CLIPPED = /\[message clipped\]|view entire message/i;
+function clipped(message: ParsedMessage): boolean {
+  return CLIPPED.test(message.body);
+}
+/**
+ * Chrome the provider adds to one copy of a message and not another: a tenant's
+ * external-sender banner is stamped on the copy that arrived from outside but
+ * not on the copy its author quoted, and a picture that one client could not
+ * re-host leaves a caption where another client kept the picture. Neither is
+ * the author's words, so neither is compared; both stay in the displayed body.
+ */
+function withoutProviderNoise(text: string): string {
+  return text
+    .replace(/[\u24d8\u2139\ufe0f\u26a0\u276f\u25b6]/g, ' ')
+    .replace(/\[image unavailable:[^\]\n]{0,160}\]/gi, ' ')
+    .replace(/\bimage removed by sender\.?/gi, ' ')
+    .replace(/\[\s*(?:external|extern|caution|suspicious)[^\]\n]{0,60}\]/gi, ' ')
+    // A banner is often laid out as separate elements, so it reaches the text
+    // one word to a line.
+    .replace(/\bexternal\s+e-?mail\b[\s:;>|.-]*/gi, ' ')
+    .replace(/^[ \t>|]*(?:caution|warning)\b[^\n]{0,200}$/gim, ' ')
+    .replace(/\bthis\s+(?:e-?mail|message)\s+(?:originated|was\s+sent|came)\s+from\s+(?:outside|an\s+external)[\s\S]{0,200}?(?:\n\s*\n|$)/gi, ' ')
+    .replace(/\bdo\s+not\s+click\s+(?:any\s+)?links\s+or\s+open\s+attachments[\s\S]{0,200}?(?:\n\s*\n|$)/gi, ' ');
+}
 function core(body: string): string {
   // Match without signature/footer noise, but retain it in the displayed body.
-  const text = body.replace(/^\s*>+\s?/gm, '');
-  const signature = text.search(/\n\s*(?:--\s*$|(?:kind |best )?regards[,!.]?\s*$|many thanks[,!.]?\s*$|thanks[,!.]?\s*$|sent from my (?:iphone|ipad|android))/im);
-  return normalizedBody(signature >= 0 ? text.slice(0, signature) : text);
+  const text = withoutProviderNoise(body).replace(/^\s*>+\s?/gm, '');
+  const signature = text.search(SIGN_OFF);
+  const trimmed = signature >= 0 ? text.slice(0, signature) : text;
+  // The provider's own truncation notice is not the author's words, and the
+  // ellipsis it leaves behind is not the author's punctuation.
+  const clip = trimmed.search(CLIPPED);
+  return normalizedBody(clip >= 0 ? trimmed.slice(0, clip).replace(/[\s.\u2026]+$/, '') : trimmed);
 }
 // A long thread compares every pair repeatedly; each body is reduced once.
 const cores = new WeakMap<ParsedMessage, string>();
@@ -70,15 +119,28 @@ function coreOf(message: ParsedMessage): string {
   if (value === undefined) { value = core(message.body); cores.set(message, value); }
   return value;
 }
+/**
+ * A quoted "Sent:" line is the sending client's own clock and the provider
+ * header is the server's, so copies of one email routinely sit a few minutes
+ * apart on top of any timezone difference. Real offsets are quarter-hour
+ * multiples, so minutes of skew never turn one offset into another.
+ */
+const SKEW = 5 * 60000;
 function sameTime(a: ParsedMessage, b: ParsedMessage, exact: boolean): boolean {
   const left = Date.parse(a.timestamp), right = Date.parse(b.timestamp);
-  if (Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 60000) return true;
+  // Word-for-word copies may absorb the skew; anything less keeps to the minute.
+  if (Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < (exact ? SKEW : 60000)) return true;
   // Unknown-time long copies can match, but tiny repeated acknowledgements cannot.
   return exact && (a.timestampEstimated === true || b.timestampEstimated === true) && coreOf(a).length >= 100;
 }
 /** A provider header read in the reader's own timezone is solid time evidence. */
 function anchoredTime(m: ParsedMessage): boolean {
   return m.timestampZoneUnknown !== true && m.timestampEstimated !== true && Number.isFinite(Date.parse(m.timestamp));
+}
+/** An email the mailbox itself holds, dated by the provider rather than by a
+ * quoting client's zoneless clock. */
+function anchoredDirect(m: ParsedMessage): boolean {
+  return m.source !== 'quoted' && anchoredTime(m);
 }
 /** Quoted attribution clocks carry no offset, so the same message can appear a
  * whole timezone away from its provider header. Accept only differences shaped
@@ -92,9 +154,10 @@ function zoneShifted(a: ParsedMessage, b: ParsedMessage): boolean {
   // The smallest real offset difference is a quarter of an hour; anything
   // closer than that is not a timezone and is left to sameTime.
   if (delta < 840000 || delta > 14 * 3600000) return false;
-  // Attributions usually omit seconds, so allow a minute either side.
+  // Attributions omit seconds and the two clocks are set independently, so a
+  // few minutes of skew sit on top of the offset.
   const remainder = delta % 900000;
-  return Math.min(remainder, 900000 - remainder) < 60000;
+  return Math.min(remainder, 900000 - remainder) < SKEW;
 }
 /** Signed shift from a zone-unknown quote to its anchored counterpart. */
 function zoneOffset(a: ParsedMessage, b: ParsedMessage): number | undefined {
@@ -122,22 +185,44 @@ function nearCopy(a: string, b: string): boolean {
 const LONG_ENOUGH = 160, SPECIFIC_ENOUGH = 40, EXACT_ENOUGH = 24, CONFIRMED_ENOUGH = 12;
 function match(a: ParsedMessage, b: ParsedMessage, offsets: number[]): boolean {
   if (a.id === b.id) return true;
-  if (imagesConflict(a, b)) return false;
   if (a.source !== 'quoted' && b.source !== 'quoted') return false;
   if (!sameAuthor(a, b)) return false;
   const x = coreOf(a), y = coreOf(b);
   if (!x || !y) return false;
-  const exact = x === y;
+  // A copy the provider truncated cannot be word-for-word equal to the whole
+  // message, but it says itself that it is the start of one. Only the provider's
+  // own notice licenses this, and only for a body long enough to be specific.
+  const truncated = Math.min(x.length, y.length) >= SPECIFIC_ENOUGH
+    && ((clipped(a) && y.startsWith(x)) || (clipped(b) && x.startsWith(y)));
+  const exact = x === y || truncated;
+  /**
+   * Pictures are re-addressed by every client that passes a message on: one
+   * thread carried the same seven-picture signature as seven proxied URLs, as
+   * seven "Image removed by sender" placeholders, and as six of those URLs plus
+   * one re-rendered copy. They therefore cannot outvote a specific run of
+   * word-for-word identical text — which is far stronger evidence of one
+   * message — but they still separate copies whose wording only resembles each
+   * other. Whichever copy differs is kept as an inspectable variant either way.
+   */
+  if (!(exact && Math.min(x.length, y.length) >= SPECIFIC_ENOUGH) && imagesConflict(a, b)) return false;
   if (sameTime(a, b, exact)) return exact || nearCopy(x, y);
   if (zoneShifted(a, b)) {
     const offset = zoneOffset(a, b);
     // An offset-shaped gap alone is weak, so require a body specific enough to
     // be one message — or an offset this same conversation has already proven.
-    const confirmed = offset !== undefined && offsets.some(known => Math.abs(known - offset) < 60000);
+    const confirmed = offset !== undefined && offsets.some(known => Math.abs(known - offset) < SKEW);
     const shortest = Math.min(x.length, y.length);
     // Word-for-word copies of a whole sentence are the same message; an edited
     // near-copy still needs a long body, or a confirmed offset and some length.
-    if (exact) return shortest >= (confirmed ? CONFIRMED_ENOUGH : LONG_ENOUGH);
+    // A copy quoted against an email the mailbox itself holds is the strongest
+    // pairing available without a proven offset: the quote is the same author's
+    // words, the provider dated the original, and the gap is offset-shaped. A
+    // sentence specific enough to be one message is then enough, because a
+    // second email repeating it word for word would be in this mailbox too, and
+    // the ambiguity rule below keeps both when it is.
+    if (exact) return shortest >= (confirmed ? CONFIRMED_ENOUGH
+      : offset !== undefined && (anchoredDirect(a) || anchoredDirect(b)) ? SPECIFIC_ENOUGH
+      : LONG_ENOUGH);
     // Only an anchored counterpart can date an edited copy.
     if ((anchoredTime(a) || anchoredTime(b)) && (shortest >= LONG_ENOUGH || (confirmed && shortest >= SPECIFIC_ENOUGH))) return nearCopy(x, y);
   }
@@ -154,6 +239,11 @@ function timeRank(m: ParsedMessage): number {
   return 1 + (m.timestampEstimated === true ? 0 : 1) + (m.timestampZoneUnknown === true ? 0 : 2);
 }
 function combine(primary: ParsedMessage, copy: ParsedMessage): ParsedMessage {
+  // Where the provider clipped one copy, the complete one is what was written.
+  // The clip notice itself adds length, so the authored words are compared.
+  if (clipped(primary) && !clipped(copy) && coreOf(copy).length > coreOf(primary).length) {
+    return combine({ ...primary, body: copy.body, bodyHtml: copy.bodyHtml }, { ...copy, body: primary.body, bodyHtml: primary.bodyHtml });
+  }
   const variants = [...(primary.quotedVariants ?? []), ...(copy.quotedVariants ?? [])];
   if (normalizedBody(primary.body) !== normalizedBody(copy.body) || imageIdentity(primary.bodyHtml) !== imageIdentity(copy.bodyHtml)) variants.push({ body: copy.body, bodyHtml: copy.bodyHtml });
   const distinct = variants.filter((v, i) => (normalizedBody(v.body) !== normalizedBody(primary.body) || imageIdentity(v.bodyHtml) !== imageIdentity(primary.bodyHtml)) && variants.findIndex(other => normalizedBody(other.body) === normalizedBody(v.body) && imageIdentity(other.bodyHtml) === imageIdentity(v.bodyHtml)) === i);
@@ -223,7 +313,7 @@ function reconcile(messages: ParsedMessage[], offsets: number[]) {
       // the same wording sent twice reads as a plain-clock or foreign gap.
       const preferred = candidates.filter(i => {
         const offset = pairOffset(result[i], msg);
-        return offset === 0 || (offset !== undefined && offsets.some(known => Math.abs(known - offset) < 60000));
+        return offset === 0 || (offset !== undefined && offsets.some(known => Math.abs(known - offset) < SKEW));
       });
       // Copies that stay ambiguous (two real identical approvals) keep history.
       if (preferred.length === 1) chosen = preferred[0];
