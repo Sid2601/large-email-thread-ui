@@ -1,4 +1,4 @@
-# ThreadLens 1.5.1
+# ThreadLens 1.6.3
 
 A local Chrome extension that displays long Gmail and Outlook email conversations as chronological chat messages. Included quoted history is split into individual messages, including when you join a conversation midway.
 
@@ -10,7 +10,13 @@ A local Chrome extension that displays long Gmail and Outlook email conversation
 4. If ThreadLens is already loaded from that directory, click **Reload** on its extension card.
 5. Refresh your Gmail/Outlook tab, open an email conversation, then click the ThreadLens toolbar icon.
 
-The ZIP in `releases/threadlens-1.5.1.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
+The ZIP in `releases/threadlens-1.6.3.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
+
+## Expansion stability in 1.6.3
+
+Opening an email already represented in quoted history now reconciles image filename/alt differences without adding duplicate messages. Formatting-only and provider-clipped copies no longer create a redundant “Quoted copy differs” section. Fuller text and available images are retained; actual wording, signature and identifiable image changes remain inspectable.
+
+Refresh Gmail after reloading the extension and export again. Existing downloaded HTML files remain unchanged. Expanding an email can still reveal previously unavailable history or refine an estimated date.
 
 ## Included
 

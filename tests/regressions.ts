@@ -438,8 +438,9 @@ describe('Deeply nested enterprise threads and provider-dropped copies', () => {
     const partial = `<div>${NOTE}<br>Regards${logos([0, 3, 6])}</div>`;
     const merged = mergeMessages([quoted('full', NOTE, full, 0), quoted('partial', NOTE, partial, 0)]);
     expect(merged).toHaveLength(1);
-    // The copy that differs stays inspectable rather than being discarded.
-    expect(merged[0].quotedVariants).toHaveLength(1);
+    // Dropped logos are presentation loss, not changed content.
+    expect(merged[0].quotedVariants ?? []).toHaveLength(0);
+    expect(merged[0].bodyHtml).toBe(full);
   });
   it('keeps a differing picture as a variant rather than as a second message', () => {
     const mine = `<div>${NOTE}<br>Regards${logos([0, 1, 2])}</div>`;
@@ -471,9 +472,9 @@ describe('Provider-trimmed copies of one message', () => {
     const clipped = `${NOTE}\n\n…\n\n[Message clipped]  View entire message`;
     const merged = mergeMessages([copy('clipped', clipped), copy('whole', WHOLE)]);
     expect(merged).toHaveLength(1);
-    // The message reads as it was written, with the truncated copy kept aside.
+    // The message reads as it was written, without a redundant clipped variant.
     expect(merged[0].body).toContain('attached workbook');
-    expect(merged[0].quotedVariants?.[0].body).toContain('[Message clipped]');
+    expect(merged[0].quotedVariants ?? []).toHaveLength(0);
   });
   it('does not treat a clipped copy as any message that merely starts the same way', () => {
     const other = `Hi Person 5, could you confirm the opening position for the southern region before Friday? The reconciliation workbook is attached for reference.`;

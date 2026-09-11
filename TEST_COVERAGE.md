@@ -1,12 +1,13 @@
 # Enterprise conversation test coverage
 
-Release 1.6.2. **185 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
+Release 1.6.3. **200 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
 
 | Area | Cases covered |
 |---|---|
 | Standard replies | Gmail nested attribution, Outlook From/Sent/To/Subject, plain On/wrote text, Apple/mobile comma attribution, wrapped attribution, single messages, ordinary blockquotes, short replies |
 | Joining midway | 40 messages recovered from one nested chain; 40 unique messages recovered from the last five direct emails; earlier quoted history retained after direct expansion |
 | Forwarding | Forward with an introduction, pure forward, nested Outlook inside forward, mixed Gmail/Outlook, independent sibling forwards, new recipient later replying in the same conversation |
+| Expansion stability | Fifteen regressions: changed image captions, removed-image labels, full versus clipped signatures in both orders, richer image retention, clearing old formatting variants, image-only and direct-ID safeguards, changed wording/title/image evidence, full data payload comparison, authored blockquotes, and five-person mixed forwarding/join chains opened and rescanned in three orders |
 | Duplicates | Original plus quoted copy, repeated quote across forwards, whitespace/NBSP/quote-prefix differences, signature/title changes, full bodies beyond 300 characters, progressive cache rescans |
 | Timezones in quotes | Zoneless attribution clocks marked and reconciled against the provider header; offset confirmed by a long copy also resolving shorter identical ones; copies quoted by clients in two different timezones; non-offset gaps, gaps beyond any inhabited offset, changed figures and two real emails an offset apart all kept separate; stable across repeated merges and rescans |
 | Edited quotes | Small contextual insertion retained as an expandable variant; full copy retained so changed wording and signatures remain inspectable |
