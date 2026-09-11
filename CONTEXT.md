@@ -1,6 +1,6 @@
 # ThreadLens project context
 
-Updated 2026-09-10. Current source version: **1.5.0**.
+Updated 2026-09-10. Current source version: **1.5.1**.
 
 ## Goal
 
@@ -16,6 +16,7 @@ Turn a long enterprise email conversation into chronological chat messages, incl
 - Attachment chips keep visible metadata even if no direct link is accessible. Open in email, Save locally, Choose downloaded file, Download saved file, and Remove local copy are available as appropriate.
 - Files use extension-origin IndexedDB, explicitly saved by the user, with a 20 MB per-file and 100 MB total limit. Authenticated direct downloads are attempted only for supported mail hosts, with timeout, response checks and streamed size enforcement. A downloaded-file picker is the fallback when provider authentication or URLs prevent direct saving.
 - Mail bodies use `chrome.storage.session`, keyed by source tab; the old global persistent currentThread entry is removed. Switching tabs requests that tab's data, and Gmail inbox navigation clears the displayed thread. The side panel opens from the extension action, not every automatic scrape.
+- Reply order follows the quote nesting, not the quoted clocks. A quoting client encloses the email it answers, so nesting is first-hand evidence of order, while every attribution clock is stamped in the quoting author's own timezone with no offset recorded. Correspondents an offset apart therefore read out of sequence and were being reordered; they no longer are.
 - Rich-text search highlights text nodes without destroying tables. Conversation subjects, recovery labels and full dates are visible.
 
 ## Source map
@@ -118,3 +119,13 @@ Reference: https://developer.chrome.com/docs/extensions/reference/api/offscreen
 Final recovery validation (2026-09-10): 121 tests pass, production packaging passes, and Chromium verifies HTTPS and source-tab blob rendering, full-size viewing and offline image exports. The previously failing blob case was caused by rejecting extension pages opened in a browser tab; the service worker now validates the exact extension panel URL, and the content script validates that the requested blob belongs to an included image. Outlook fallback IDs stay stable on edits, and nested item selectors resolve to one authoritative container.
 
 Synthetic performance result: 40 messages / 1,043,271 input HTML bytes. The recorded mail-page script time during five toolbar/scroll changes fell from 2353.896 ms (1.3.1) to 1.212 ms; no additional message snapshots occurred. Initial capture work was 84.1 ms total, at most 2.7 ms for one snapshot. Total scenario elapsed time increased from 8.3 s to 11.8 s because parsing is deliberately paced outside the mail page; this is not an end-to-end speed or FPS claim. The benchmark source and raw JSON are committed.
+
+## 1.5.1 reply order across timezones
+
+A Sheffield North export placed Jay's `09:04` explanation before the `13:28` message it answered. Both times were read from quoted attributions, and neither records an offset: Jay's was written by Marie's UK client and Jodie's by Jay's IST client, so `13:28 IST` really preceded `09:04 BST`. The absolute instants are not recoverable — no message appears twice in that thread for the existing offset voting to calibrate against — but the order is, because the chain nests it.
+
+- `quoted-chain-parser.ts` records `quotedBy` on each recovered message: the id of the innermost enclosing header, or the carrier's id at the top level. Only real enclosure counts; sibling forwards prove no order and get no link. A dropped empty quote hands its children the nearest surviving quoter.
+- `message-reconciliation.ts` sorts topologically instead of by clock alone: `reconcile` now reports where each copy landed, so links read from separate emails constrain the one message they merged into, and two of the user's own emails can join their partial chains through a shared message. Of the messages whose predecessors are placed, the earliest clock goes next, so a thread that quotes nothing is ordered exactly as before. A cycle — reachable only if two messages were wrongly collapsed — falls back to the clock rather than stalling.
+- Where nesting overrules the clocks, both messages carry `orderedByQuote`; the panel tooltip and the export label them **Placed by the quoted reply chain**, since a `13:28` shown above an `09:04` otherwise reads as a new defect.
+
+Displayed times are unchanged and remain the raw quoted clocks in mixed zones. Ordering is now correct; the instants stay unrecoverable unless a message appears in two chains, which the existing offset voting already handles.

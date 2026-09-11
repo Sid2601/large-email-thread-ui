@@ -6,6 +6,8 @@ import { highlightedEmailHtml } from '../src/side-panel/components/email-markup'
 import { attachmentUrl, saveAttachment, MAX_FILE_BYTES } from '../src/side-panel/storage/attachments';
 import { buildSender } from '../src/content/scraper-utils';
 import type { ParsedMessage } from '../src/types';
+import { parseSnapshot } from '../src/offscreen/parser';
+import type { SnapshotBatch, MessageSnapshot } from '../src/shared/snapshots';
 const anchor = '2026-09-09T12:00:00Z';
 function parse(html: string) {
   const el = document.createElement('div'); el.innerHTML = html;
@@ -138,6 +140,84 @@ describe('Quoted attribution timezones', () => {
   });
   it('never collapses two real emails an offset apart', () => {
     expect(mergeMessages([sent('first', 'motka', longSentAt, LONG), sent('second', 'motka', longSentAt - SHIFT, LONG, { timestampZoneUnknown: true })])).toHaveLength(2);
+  });
+});
+describe('Reply order across correspondents in different timezones', () => {
+  // Sheffield North: the engineers write from IST and the finance team from
+  // the UK, so every attribution clock is stamped in the quoting author's own
+  // zone. Jodie's 13:28 is the message Jay answered at 09:04.
+  const bodies: Record<string, string> = {
+    jodieOpen: 'Hi all, can I confirm that I will be sent the 09/09 opening position for on-order and in-transit stock by PO for the northern site, to ensure we are all aligned?',
+    jayConfirm: 'Hi Jodie, yes, I can confirm that the details for on-order and in-transit stock will be shared for the northern site once the cutover tasks complete.',
+    premData: 'Hi Jodie, please find attached the details for on-order and in-transit stock for the northern site. Thanks, Prem.',
+    jodieFlag: 'Hi Jay, as discussed I have run the closing stock position from the 8th and attached the data. I am seeing around 40,000 in transit but your file says nil.',
+    jayExplain: 'Hi Jodie, by design the ledger holds unresolved in-transit rows for non-participating stores, because those stores have no feed to complete the receipting, so the closing position still lists them.',
+    marieQuery: 'Hi Jay, I do not quite understand what has been done to in-transit at this point. The requirement is that the cutover leaves the position reflecting what is genuinely in transit to the store.',
+  };
+  const people: Record<string, string> = { jodie: 'Jodie Piwowar', jay: 'Jay Motka', prem: 'Prem Kumar', marie: 'Marie Rumble' };
+  function attr(clock: string, who: string, quoted: string) {
+    return `<div class="gmail_attr">On ${clock}, <a href="mailto:${who}@example.com">${people[who]}</a> wrote:</div><blockquote class="gmail_quote">${quoted}</blockquote>`;
+  }
+  // Jodie asked, Jay confirmed, Prem sent the data, Jodie flagged the gap, Jay
+  // explained it, and Marie challenged Jay — each reply nesting the last.
+  const opening =
+    attr('Wed, 9 Sept 2026 at 13:28', 'jodie', `<p>${bodies.jodieFlag}</p>` +
+    attr('Wed, 9 Sept 2026 at 05:10', 'prem', `<p>${bodies.premData}</p>` +
+    attr('Tue, 8 Sept 2026 at 16:01', 'jay', `<p>${bodies.jayConfirm}</p>` +
+    attr('Tue, 8 Sept 2026 at 15:14', 'jodie', `<p>${bodies.jodieOpen}</p>`))));
+  const chain =
+    attr('Wed, 9 Sept 2026 at 14:00', 'marie', `<p>${bodies.marieQuery}</p>` +
+    attr('Wed, 9 Sept 2026 at 09:04', 'jay', `<p>${bodies.jayExplain}</p>` + opening));
+  const REPLY = 'Hi Marie, I checked and it is an implementation issue at our end; two events are published where we expected one.';
+  const order = ['jodieOpen', 'jayConfirm', 'premData', 'jodieFlag', 'jayExplain', 'marieQuery'];
+  function read() {
+    const el = document.createElement('div');
+    el.innerHTML = `<p>${REPLY}</p>${chain}`;
+    return extractEmailBody(el, 'me@example.com', 'sheffield', anchor, 'carrier');
+  }
+  function names(messages: ParsedMessage[]) {
+    return messages.map(m => order.find(key => m.body.startsWith(bodies[key].slice(0, 40))) ?? 'carrier');
+  }
+  it('follows the quote nesting when zoneless clocks read out of order', () => {
+    expect(names(read().history)).toEqual(order);
+  });
+  it('marks only the pair whose clocks contradict the reply order', () => {
+    expect(names(read().history.filter(m => m.orderedByQuote))).toEqual(['jodieFlag', 'jayExplain']);
+  });
+  it('keeps the carrier after everything it quotes', () => {
+    const { body, history } = read();
+    // The carrier's provider header reads 04:00, earlier than the 14:00 quote
+    // it encloses, because the two clocks are in different timezones.
+    const carrier: ParsedMessage = { id: 'carrier', sender: buildSender('Sid', 'me@example.com'), timestamp: '2026-09-09T04:00:00Z', body, source: 'direct', index: 0, isCurrentUser: true };
+    expect(names(mergeMessages([...history, carrier]))).toEqual([...order, 'carrier']);
+  });
+  it('stays put when merged again, and through the thread cache', () => {
+    const history = read().history;
+    const merged = mergeMessages(history);
+    expect(JSON.stringify(mergeMessages(merged))).toBe(JSON.stringify(merged));
+    threadCache.evict('sheffield');
+    threadCache.update('sheffield', history);
+    expect(names(threadCache.getThreadData('sheffield', 'Stock', 'gmail')!.messages)).toEqual(order);
+  });
+  it('joins the chains of two of my own emails through their shared message', () => {
+    const batch = { threadId: 'sheffield', currentUserEmail: 'me@example.com' } as SnapshotBatch;
+    function snapshot(id: string, html: string, timestamp: string, index: number): MessageSnapshot {
+      return { message: { id, sender: buildSender('Sid', 'me@example.com'), timestamp, body: '', source: 'direct', index, isCurrentUser: true }, html, imageSources: [] };
+    }
+    // Neither email quotes the whole thread; only the copies of Jodie's flag
+    // they share can join the older half of the chain to the newer.
+    const early = parseSnapshot(snapshot('early', `<p>Thanks Jodie, I am looking at the figures you attached now.</p>${opening}`, '2026-09-09T09:00:00Z', 0), batch);
+    const late = parseSnapshot(snapshot('late', `<p>${REPLY}</p>${chain}`, '2026-09-10T11:05:00Z', 1), batch);
+    expect(names(mergeMessages([...early, ...late]))).toEqual([...order, 'carrier', 'carrier']);
+  });
+  it('leaves sibling quotes, which prove no order, to their clocks', () => {
+    const el = document.createElement('div');
+    // Two branches forwarded side by side: neither encloses the other, so the
+    // nesting says nothing about which was sent first.
+    el.innerHTML = `<p>Compare these.</p>${attr('Wed, 9 Sept 2026 at 13:28', 'jodie', `<p>${bodies.jodieFlag}</p>`)}${attr('Wed, 9 Sept 2026 at 09:04', 'jay', `<p>${bodies.jayExplain}</p>`)}`;
+    const history = extractEmailBody(el, 'me@example.com', 'siblings', anchor, 'carrier').history;
+    expect(names(history)).toEqual(['jayExplain', 'jodieFlag']);
+    expect(history.some(m => m.orderedByQuote)).toBe(false);
   });
 });
 describe('HTML and attachment boundaries', () => {

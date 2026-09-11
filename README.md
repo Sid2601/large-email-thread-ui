@@ -1,4 +1,4 @@
-# ThreadLens 1.5.0
+# ThreadLens 1.5.1
 
 A local Chrome extension that displays long Gmail and Outlook email conversations as chronological chat messages. Included quoted history is split into individual messages, including when you join a conversation midway.
 
@@ -10,7 +10,7 @@ A local Chrome extension that displays long Gmail and Outlook email conversation
 4. If ThreadLens is already loaded from that directory, click **Reload** on its extension card.
 5. Refresh your Gmail/Outlook tab, open an email conversation, then click the ThreadLens toolbar icon.
 
-The ZIP in `releases/threadlens-1.5.0.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
+The ZIP in `releases/threadlens-1.5.1.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
 
 ## Included
 
@@ -44,6 +44,8 @@ Missing-year dates are inferred relative to the current conversation and labeled
 
 A collapsed row often labels only a clock (`10:32`) or a day (`Sep 8`), so its full date is read from the row's `title`/tooltip attributes rather than its visible text. When no readable date exists at all, the message keeps **the place the mailbox gives it** — its position is read from the thread's own DOM order on every pass — and its time is interpolated between the nearest messages whose clocks were readable, so it stays where it belongs instead of drifting to the end of the timeline. The time itself is still shown as approximate, because it is. Opening an email in the mail tab refines its displayed time but no longer changes its order.
 
+When two correspondents are in different timezones, no amount of clock reading settles their order: each quoted header is stamped in the quoting author's zone, so a reply can read `09:04` above the `13:28` message it answers. The quote nesting itself is the evidence — a client encloses the email it is answering inside its own — so **messages are ordered by the reply chain, and the clocks only break ties the chain leaves open**. A thread quoting nothing, and two messages the chain never relates (sibling forwards, for instance), keep the plain chronological order. Where the nesting overrules the clocks, both messages are marked *Placed by the quoted reply chain* in the panel and the export, so a time that looks out of sequence is explained rather than silently corrected.
+
 A quoted reply header such as `On 9 Sept 2026 at 09:04 ... wrote:` is written by the replying client in **its own timezone and records no offset**, so the same email can read hours away from the provider header your mail client renders in yours. Those clocks are reconciled against the provider header, which supplies the displayed time, and an offset confirmed by a long duplicate also resolves shorter identical copies in the same conversation. One offset is used by every copy a client quoted, so word-for-word copies vote on it: two copies that agree, or one long body, confirm the offset that then dates the shorter copies. No copy can confirm the offset that would justify merging itself. Where the same wording was genuinely sent twice, each copy is attached to the message whose gap is the offset the thread proved. Separate emails, different senders, changed figures and gaps no timezone produces stay separate; conversations written in a single timezone are unaffected. Where nothing resolves a quoted clock, the panel and the export say the time was read from quoted text and may be offset from the real send time.
 
 ## Download an entire conversation
@@ -67,11 +69,11 @@ Optional full extension smoke test, with an available Playwright installation an
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
 ```
 
-The parser suite has **144 passing checks**, including a 40-message case. The browser smoke tests extraction, table rendering, rich search, attachment persistence/download/removal and tab navigation. See **TEST_COVERAGE.md** for the covered cases, and **CONTEXT.md** for architecture, implementation decisions, limitations and next checks.
+The parser suite has **150 passing checks**, including a 40-message case. The browser smoke tests extraction, table rendering, rich search, attachment persistence/download/removal and tab navigation. See **TEST_COVERAGE.md** for the covered cases, and **CONTEXT.md** for architecture, implementation decisions, limitations and next checks.
 
 ## Recreate release downloads after cloning
 
-The generated `dist/` and `releases/` directories are intentionally ignored by Git. All source for the 1.5.0 fixes is in main. Run `npm ci` and `npm run package` (Node.js 20.19+ and Python 3) to validate, rebuild, and produce `releases/threadlens-<version>.zip` with installation instructions and SHA-256 checksums. The ZIP contains a root manifest.json and can be extracted and loaded unpacked in Chrome. No customer mail is included.
+The generated `dist/` and `releases/` directories are intentionally ignored by Git. All source for the 1.5.1 fixes is in main. Run `npm ci` and `npm run package` (Node.js 20.19+ and Python 3) to validate, rebuild, and produce `releases/threadlens-<version>.zip` with installation instructions and SHA-256 checksums. The ZIP contains a root manifest.json and can be extracted and loaded unpacked in Chrome. No customer mail is included.
 
 ## Image availability and performance
 

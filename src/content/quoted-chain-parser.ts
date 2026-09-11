@@ -112,7 +112,7 @@ function isRecipientContinuation(line: string): boolean {
   return recipientEmails(line).length > 0 && !line.replace(email, '').replace(/[\s;,]/g, '');
 }
 
-export function extractEmailBody(bodyEl: Element, currentUserEmail: string, threadId: string, anchorTimestamp: string) {
+export function extractEmailBody(bodyEl: Element, currentUserEmail: string, threadId: string, anchorTimestamp: string, carrierId = anchorTimestamp) {
   const inert = new DOMParser().parseFromString('', 'text/html');
   const root = inert.importNode(bodyEl, true) as Element;
   root.querySelectorAll('script,style,iframe,object,form,u.q').forEach(el => el.remove());
@@ -210,20 +210,33 @@ export function extractEmailBody(bodyEl: Element, currentUserEmail: string, thre
     const bodyHtml = html.filter(Boolean).join('<br>');
     return { bodyHtml, body: htmlToText(bodyHtml) };
   }
-  const history = unique.map((h, i): ParsedMessage => {
-    const body = content(h.end, h.scopeEnd!);
+  const bodies = unique.map(h => content(h.end, h.scopeEnd!));
+  const ids = unique.map((h, i) => generateId(`${threadId}:${h.sender.email}:${h.date}:${bodies[i].body.replace(/\s+/g, ' ').trim()}:${imageIdentity(bodies[i].bodyHtml)}`, 'chain'));
+  // The innermost header enclosing this one belongs to the client that quoted
+  // it, so that author replied to this message. Siblings enclose nothing and
+  // stay unordered: only real nesting is evidence.
+  const enclosing = unique.map(h => {
+    for (let i = unique.length - 1; i >= 0; i--) if (unique[i].start < h.start && unique[i].scopeEnd! > h.start) return i;
+    return -1;
+  });
+  const drafts = unique.map((h, i): ParsedMessage => {
+    const body = bodies[i];
     const fallback = new Date((Date.parse(anchorTimestamp) || 0) - (i + 1) * 1000).toISOString();
     const date = parseEmailDate(h.date, fallback);
     // Only a clock we actually read from the header can be zone-shifted; an
     // unparsed date already falls back to the carrier's position in the thread.
     const zoneUnknown = date.timestamp !== fallback && !hasExplicitTimezone(h.date);
-    const key = `${threadId}:${h.sender.email}:${h.date}:${body.body.replace(/\s+/g, ' ').trim()}:${imageIdentity(body.bodyHtml)}`;
-    return { id: generateId(key, 'chain'), sender: h.sender, ...date, ...(zoneUnknown ? { timestampZoneUnknown: true } : {}), ...body, source: 'quoted', recipients: h.recipients,
+    return { id: ids[i], sender: h.sender, ...date, ...(zoneUnknown ? { timestampZoneUnknown: true } : {}), ...body, source: 'quoted', recipients: h.recipients,
       isCurrentUser: !!currentUserEmail && h.sender.email === currentUserEmail.toLowerCase(), index: -i - 1 };
-  }).filter(m => m.body || /<(?:table|img)\b/i.test(m.bodyHtml ?? ''));
+  });
+  const kept = drafts.map(m => !!(m.body || /<(?:table|img)\b/i.test(m.bodyHtml ?? '')));
+  // An empty quote is dropped, so its children name the nearest surviving
+  // quoter instead — still a message that was certainly sent after them.
+  const quoter = (i: number): string => i < 0 ? carrierId : kept[i] ? ids[i] : quoter(enclosing[i]);
+  const history = drafts.map((m, i) => ({ ...m, quotedBy: quoter(enclosing[i]) })).filter((_, i) => kept[i]);
   return { ...content(0, p.text.length), history: mergeMessages(history) };
 }
 
-export function parseQuotedChain(body: Element, user: string, thread: string, anchor: string): ParsedMessage[] {
-  return extractEmailBody(body, user, thread, anchor).history;
+export function parseQuotedChain(body: Element, user: string, thread: string, anchor: string, carrier?: string): ParsedMessage[] {
+  return extractEmailBody(body, user, thread, anchor, carrier).history;
 }

@@ -45,7 +45,9 @@ export function MessageBubble({ message, showSenderName, searchQuery = '', tabId
   })();
   // No provider header was available for this copy, only a quoted clock written
   // without an offset, so say so rather than presenting it as exact.
-  const timeHint = message.timestampZoneUnknown && !message.timestampEstimated
+  const timeHint = message.orderedByQuote
+    ? 'Placed by the quoted reply chain, not by this clock. The time was read from quoted text, which records no timezone, so it sits in a different one to its neighbour.'
+    : message.timestampZoneUnknown && !message.timestampEstimated
     ? 'Read from quoted text, which records no timezone. This can be offset from the original send time.'
     : undefined;
 

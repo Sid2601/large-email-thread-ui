@@ -209,10 +209,13 @@ function votedOffsets(messages: ParsedMessage[]): number[] {
 function reconcile(messages: ParsedMessage[], offsets: number[]) {
   const result: ParsedMessage[] = [];
   const observed: number[] = [];
+  // Where each input copy ended up, so quote-nesting evidence gathered before
+  // reconciliation still names the surviving message afterwards.
+  const place = new Map<ParsedMessage, number>();
   const ordered = [...messages].sort((a, b) => Number(a.source === 'quoted') - Number(b.source === 'quoted'));
   for (const msg of ordered) {
     const sameId = result.findIndex(old => old.id === msg.id);
-    if (sameId >= 0) { result[sameId] = combine(result[sameId], msg); continue; }
+    if (sameId >= 0) { place.set(msg, sameId); result[sameId] = combine(result[sameId], msg); continue; }
     const candidates = result.map((old, i) => match(old, msg, offsets) ? i : -1).filter(i => i >= 0);
     let chosen = candidates.length === 1 ? candidates[0] : -1;
     if (candidates.length > 1) {
@@ -225,14 +228,15 @@ function reconcile(messages: ParsedMessage[], offsets: number[]) {
       // Copies that stay ambiguous (two real identical approvals) keep history.
       if (preferred.length === 1) chosen = preferred[0];
     }
-    if (chosen < 0) { result.push({ ...msg }); continue; }
+    if (chosen < 0) { place.set(msg, result.length); result.push({ ...msg }); continue; }
+    place.set(msg, chosen);
     const target = result[chosen];
     const offset = zoneShifted(target, msg) ? zoneOffset(target, msg) : undefined;
     // Only a long copy is strong enough to teach this conversation an offset.
     if (offset !== undefined && Math.min(coreOf(target).length, coreOf(msg).length) >= LONG_ENOUGH) observed.push(offset);
     result[chosen] = combine(target, msg);
   }
-  return { result, observed };
+  return { result, observed, place };
 }
 
 /** A clock the provider never spelled out, such as a collapsed row labelled
@@ -263,13 +267,63 @@ function chronological(a: ParsedMessage, b: ParsedMessage): number {
   if (!Number.isFinite(left) || !Number.isFinite(right)) return (Number.isFinite(left) ? 0 : 1) - (Number.isFinite(right) ? 0 : 1) || a.index - b.index;
   return left - right || a.index - b.index;
 }
+/** A quoting client nests the message it answers inside its own, so the quote
+ * links record the reply order first-hand. That evidence outranks the clocks:
+ * an attribution is stamped in the quoting author's timezone, which it never
+ * writes down, so correspondents an offset apart read out of order — a reply
+ * at 09:04 appearing to precede the 13:28 message it answers. Each link is
+ * read after reconciliation so copies from separate emails constrain the one
+ * message they were merged into. */
+function chainEdges(messages: ParsedMessage[], place: Map<ParsedMessage, number>): [number, number][] {
+  const byId = new Map<string, number>();
+  for (const message of messages) byId.set(message.id, place.get(message)!);
+  const edges: [number, number][] = [];
+  for (const message of messages) {
+    const quoter = message.quotedBy === undefined ? undefined : byId.get(message.quotedBy);
+    if (quoter !== undefined) edges.push([place.get(message)!, quoter]);
+  }
+  return edges;
+}
+/** Chronological, but never contradicting the quote nesting: of the messages
+ * whose predecessors are already placed, the earliest clock goes next. A thread
+ * that quotes nothing therefore keeps exactly the plain chronological order. */
+function sequence(messages: ParsedMessage[], edges: [number, number][]): ParsedMessage[] {
+  const order = messages.map((_, i) => i).sort((a, b) => chronological(messages[a], messages[b]) || a - b);
+  const blocking = messages.map(() => 0);
+  const unlocks = messages.map((): number[] => []);
+  for (const [older, newer] of edges) {
+    if (older === newer || unlocks[older].includes(newer)) continue;
+    unlocks[older].push(newer); blocking[newer]++;
+  }
+  const sorted: ParsedMessage[] = [];
+  while (order.length) {
+    // Copies wrongly collapsed into one message could leave a cycle with no
+    // free message; the clock then settles it rather than stalling the thread.
+    const at = Math.max(0, order.findIndex(i => blocking[i] === 0));
+    const [next] = order.splice(at, 1);
+    for (const later of unlocks[next]) blocking[later]--;
+    sorted.push(messages[next]);
+  }
+  // Where the nesting overruled the clocks, say so on both messages: their
+  // times were read in timezones that differ, and the reader can see it.
+  let latest = -Infinity, latestAt = -1;
+  for (let i = 0; i < sorted.length; i++) {
+    const time = Date.parse(sorted[i].timestamp);
+    if (!Number.isFinite(time)) continue;
+    if (time < latest) {
+      sorted[i] = { ...sorted[i], orderedByQuote: true };
+      sorted[latestAt] = { ...sorted[latestAt], orderedByQuote: true };
+    } else { latest = time; latestAt = i; }
+  }
+  return sorted;
+}
 
 export function mergeMessages(messages: ParsedMessage[]): ParsedMessage[] {
   const voted = votedOffsets(messages);
   const first = reconcile(messages, voted);
   // An offset proven by a long duplicate also resolves the shorter copies.
-  const merged = first.observed.length ? reconcile(messages, [...voted, ...first.observed]).result : first.result;
-  return placeUnread(merged).sort(chronological);
+  const merged = first.observed.length ? reconcile(messages, [...voted, ...first.observed]) : first;
+  return sequence(placeUnread(merged.result), chainEdges(messages, merged.place));
 }
 
 export function participationBoundary(messages: ParsedMessage[], currentUserEmail = ''): ThreadData['participation'] {

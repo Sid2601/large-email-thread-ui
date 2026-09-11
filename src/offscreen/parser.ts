@@ -12,7 +12,7 @@ export function parseSnapshot(snapshot: MessageSnapshot, batch: SnapshotBatch): 
     if (source) img.setAttribute('src', source);
     img.removeAttribute('srcset');
   });
-  const { body, bodyHtml, history } = extractEmailBody(root, batch.currentUserEmail, batch.threadId, snapshot.message.timestamp);
+  const { body, bodyHtml, history } = extractEmailBody(root, batch.currentUserEmail, batch.threadId, snapshot.message.timestamp, snapshot.message.id);
   const hasImage = /<img\b/i.test(bodyHtml);
   if (!body && !hasImage && !history.length && !snapshot.message.attachments?.length) return history;
   return [...history, { ...snapshot.message, body: body || (history.length && !hasImage ? 'This email contains only quoted history, shown separately above.' : ''),
