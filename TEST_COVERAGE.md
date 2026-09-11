@@ -1,6 +1,6 @@
 # Enterprise conversation test coverage
 
-Release 1.3.1. **98 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
+Release 1.5.1. **150 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
 
 | Area | Cases covered |
 |---|---|
@@ -17,6 +17,14 @@ Release 1.3.1. **98 automated tests** plus the real Chromium extension smoke tes
 | Formatting and safety | Tables and cell spans, nested emphasis, rich search, ordinary quoted passages, active-content removal, unsafe links/styles, metadata escaping and export CSP |
 | Attachments | Late-arriving metadata preserved through reconciliation, host checks, per-file limit, direct saving, manual import, IndexedDB persistence, saved download/removal |
 | Full exports | All messages despite filters, chronological order, metadata, formatted tables, attachment names without expiring URLs, approximate labels, duplicate cleanup, quoted variants, participation note |
+| Thread order | Unreadable clocks kept in mailbox position and interpolated between readable neighbours, leading/trailing gaps, equal and unparsable clocks, collapsed-row dates read from header attributes, mailbox position reported over snapshot order |
+| Reply order across timezones | Quote nesting placing correspondents whose zoneless clocks read out of order, the contradicting pair marked in the panel and the export, the carrier kept after everything it quotes, chains of two separate emails joined through a shared message, sibling forwards left to their clocks, order stable across repeated merges and cache rescans |
+| Duplicate copies | Twenty-email thread with unanswered follow-ups reduced to one entry per message, identical follow-ups assigned to the right message, name-only attributions matched, placeholder names kept apart, re-addressed inline pictures merged, differing pictures kept apart, offset confirmed by two agreeing copies |
+| No-images exports | Every image replaced by a filename, source URLs and image bytes absent, source-derived and generated names, alt text kept, image-free threads unchanged, filename suffix |
+| Inline images | Image-only, leading/trailing, between paragraphs, table-cell and quoted images; author ownership; live source overrides; blob references; unsafe/cid rejection; removed-image captions; differing images kept separate; export embedding/failure notices; raster/size checks |
+| Browser image flow | HTTPS and source-tab blob images render at full natural dimensions; full-size dialog; offline HTML embeds both sources; updates/replaced body nodes retain pictures |
+| Adapter stability | Gmail identity/date stable across edits; Outlook fallback IDs stable; nested Outlook wrappers produce one message |
+| Performance | Synthetic 40-message ~1 MB benchmark; no automatic expand-all; unrelated toolbar/scroll mutations cause zero additional snapshots; a body edit snapshots only its owning message |
 | Extension integration | Real content script/service worker/panel flow, tab isolation, inbox clearing, no preload mismatch warnings, synthetic missing-year near-copy example, timezone-shifted quoted copy, forward-only receiving event |
 
 ## Commands
@@ -34,5 +42,5 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
 - Recipient headers show first *visible* inclusion, not guaranteed original membership. Bcc, group membership, aliases, unavailable header details and unknown signed-in identity can require the availability fallback.
 - Arbitrary localized/custom headers and interleaved inline edits are not universally supported. Add an anonymized DOM fixture for each real failure.
 - A quote can be edited by its sender. Near-copy matching is intentionally narrow; variants remain inspectable, and ambiguous cases can still appear separately.
-- A quoted attribution line records no timezone. Where no provider header or confirmed offset resolves it, the displayed time is the quoted clock read as local and can be offset from the real send time; the panel and the export say so.
+- A quoted attribution line records no timezone. Where no provider header or confirmed offset resolves it, the displayed time is the quoted clock read as local and can be offset from the real send time; the panel and the export say so. Quote nesting still orders those messages correctly, but two messages that no chain relates — sibling forwards, or a direct email quoting neither — are ordered by clocks that may sit in different zones.
 - Live enterprise Gmail/Outlook selectors and provider authentication must be verified in the user's tenant. Synthetic Chromium testing is not a live-mailbox certification.

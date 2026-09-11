@@ -1,3 +1,4 @@
+import { safeImageSource } from '../shared/images';
 import type { Sender } from '../types';
 
 export function extractInitials(name: string): string {
@@ -34,7 +35,7 @@ export function buildSender(name: string, email: string): Sender {
  * Used for quoted/collapsed content where formatting doesn't matter.
  */
 export function stripHtml(html: string): string {
-  const div = document.createElement('div');
+  const div = new DOMParser().parseFromString('', 'text/html').createElement('div');
   div.innerHTML = html;
   return (div.textContent ?? div.innerText ?? '').trim();
 }
@@ -65,8 +66,9 @@ export function htmlToText(html: string): string {
     // final div decodes the remaining entities correctly.
     .replace(/&nbsp;/gi, ' ');
 
-  const div = document.createElement('div');
+  const div = new DOMParser().parseFromString('', 'text/html').createElement('div');
   div.innerHTML = processed;
+  div.querySelectorAll('img').forEach(img => img.replaceWith(document.createTextNode(`[Image: ${img.getAttribute('alt') || 'Inline image'}]`)));
   const text = div.textContent ?? div.innerText ?? '';
 
   // Collapse 3+ consecutive newlines to 2 (max one blank line between paragraphs)
@@ -135,13 +137,23 @@ export function safeLink(raw: string): string {
 }
 
 export function sanitizeEmailHtml(html: string): string {
-  const tmp = document.createElement('div');
+  const tmp = new DOMParser().parseFromString('', 'text/html').createElement('div');
   tmp.innerHTML = html;
   tmp.querySelectorAll('script,style,iframe,object,embed,form,input,button,link,meta,svg,math').forEach(el => el.remove());
   for (const el of Array.from(tmp.querySelectorAll('*')).reverse()) {
     const tag = el.tagName.toLowerCase();
     if (tag === 'img') {
-      el.replaceWith(document.createTextNode(el.getAttribute('alt') ? `[Image: ${el.getAttribute('alt')}]` : '[Image]'));
+      const src = safeImageSource(el.getAttribute('src') || el.getAttribute('data-tl-image-src') || el.getAttribute('data-src') || '');
+      const alt = el.getAttribute('alt') || 'Inline image';
+      if (Number(el.getAttribute('width')) > 0 && Number(el.getAttribute('width')) <= 2 && Number(el.getAttribute('height')) > 0 && Number(el.getAttribute('height')) <= 2) { el.remove(); continue; }
+      if (!src) { el.replaceWith(document.createTextNode(`[Image unavailable: ${alt}]`)); continue; }
+      const width = el.getAttribute('width'), height = el.getAttribute('height');
+      for (const attr of Array.from(el.attributes)) el.removeAttribute(attr.name);
+      // Blob URLs belong to the original mail tab and are resolved on demand.
+      el.setAttribute(src.startsWith('blob:') ? 'data-tl-image-src' : 'src', src);
+      el.setAttribute('alt', alt); el.setAttribute('loading', 'lazy'); el.setAttribute('decoding', 'async'); el.setAttribute('referrerpolicy', 'no-referrer');
+      if (width && /^\d{1,5}$/.test(width)) el.setAttribute('width', width);
+      if (height && /^\d{1,5}$/.test(height)) el.setAttribute('height', height);
       continue;
     }
     if (!ALLOWED_TAGS.has(tag)) { el.replaceWith(...Array.from(el.childNodes)); continue; }

@@ -2,44 +2,55 @@
 import type { ParsedMessage } from '../types';
 import { buildSender, htmlToText, generateId, sanitizeEmailHtml } from './scraper-utils';
 
-import { mergeMessages } from './message-reconciliation';
+import { mergeMessages, imageIdentity } from './message-reconciliation';
 export { mergeMessages } from './message-reconciliation';
 
-type Point = { node: Node; offset: number };
+type TextRun = { start: number; end: number; node: Node; offset: number; image?: boolean };
 type Header = { start: number; end: number; sender: ReturnType<typeof buildSender>; date: string; scopeEnd?: number; recipients?: string[] };
 const BLOCK = /^(DIV|P|BLOCKQUOTE|TR|H[1-6]|LI|PRE|HR)$/;
 
-// A text projection with a DOM point per character lets us split even headers
-// spread across spans/bold tags, while cloning tables and lists intact.
+// One DOM mapping per text run avoids allocating an object for every character.
+// Range slices still preserve headers spread across spans, tables, and lists.
 function project(root: Element) {
-  let text = '';
-  const points: Point[] = [];
+  const chunks: string[] = [];
+  let length = 0;
+  const runs: TextRun[] = [];
   const spans = new Map<Element, [number, number]>();
-  function add(s: string, node: Node, offset: number) {
-    for (let i = 0; i < s.length; i++) {
-      text += s[i];
-      points.push({ node, offset: node.nodeType === Node.TEXT_NODE ? offset + i : offset });
-    }
+  function add(s: string, node: Node, offset: number, image = false) {
+    if (!s) return;
+    runs.push({ start: length, end: length + s.length, node, offset, image });
+    chunks.push(s); length += s.length;
   }
   function visit(node: Node) {
     if (node.nodeType === Node.TEXT_NODE) { add(node.textContent ?? '', node, 0); return; }
     if (!(node instanceof Element)) return;
+    if (node.tagName === 'IMG' && node.parentNode) {
+      add('\uFFFC', node.parentNode, Array.from(node.parentNode.childNodes).indexOf(node), true);
+      return;
+    }
     if (BLOCK.test(node.tagName) || node.tagName === 'BR') add('\n', node, 0);
-    const start = text.length;
+    const start = length;
     node.childNodes.forEach(visit);
-    spans.set(node, [start, text.length]);
+    spans.set(node, [start, length]);
     if (BLOCK.test(node.tagName)) add('\n', node, node.childNodes.length);
   }
   visit(root);
+  const text = chunks.join('');
+  function point(index: number, end = false) {
+    let low = 0, high = runs.length - 1;
+    while (low < high) { const mid = (low + high) >>> 1; if (runs[mid].end <= index) low = mid + 1; else high = mid; }
+    const run = runs[low];
+    return { node: run.node, offset: run.offset + (run.node.nodeType === Node.TEXT_NODE ? index - run.start + Number(end) : run.image && end ? 1 : 0) };
+  }
   function slice(start: number, end: number) {
     while (start < end && /\s/.test(text[start])) start++;
     while (end > start && /\s/.test(text[end - 1])) end--;
     if (start === end) return '';
-    const range = document.createRange();
-    const a = points[start], b = points[end - 1];
+    const range = root.ownerDocument.createRange();
+    const a = point(start), b = point(end - 1, true);
     range.setStart(a.node, a.offset);
-    range.setEnd(b.node, b.offset + (b.node.nodeType === Node.TEXT_NODE ? 1 : 0));
-    const div = document.createElement('div');
+    range.setEnd(b.node, b.offset);
+    const div = root.ownerDocument.createElement('div');
     div.append(range.cloneContents());
     let ancestor = range.commonAncestorContainer;
     if (ancestor.nodeType === Node.TEXT_NODE) ancestor = ancestor.parentNode!;
@@ -60,7 +71,9 @@ function project(root: Element) {
 
 function sender(raw: string) {
   const email = raw.match(/[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[a-z]{2,}/i)?.[0] ?? '';
-  const name = raw.replace(email, '').replace(/\[mailto:[^\]]*\]/gi, '').replace(/[<>"()]/g, '').trim();
+  const name = raw.replace(email, '').replace(/\[mailto:[^\]]*\]/gi, '').replace(/[<>"()]/g, '')
+    // An attribution separates the date from the author with punctuation.
+    .replace(/^[\s,;:·•-]+/, '').replace(/[\s,;:]+$/, '').trim();
   return buildSender(name || email.split('@')[0] || 'Unknown', email || `unknown:${name}`);
 }
 
@@ -68,7 +81,8 @@ function sender(raw: string) {
  * clock. Without an explicit offset the same message reads hours away from the
  * provider header, which is rendered in the reader's own timezone. */
 export function hasExplicitTimezone(raw: string): boolean {
-  return /[+-]\d{2}:?\d{2}\b|\b(?:GMT|UTC|UT|Z)\b/i.test(raw);
+  // A trailing ISO Z follows a digit, where a word boundary never appears.
+  return /[+-]\d{2}:?\d{2}\b|\b(?:GMT|UTC|UT|Z)\b|\dZ$/i.test(raw);
 }
 
 export function parseEmailDate(raw: string, fallback: string) {
@@ -98,8 +112,9 @@ function isRecipientContinuation(line: string): boolean {
   return recipientEmails(line).length > 0 && !line.replace(email, '').replace(/[\s;,]/g, '');
 }
 
-export function extractEmailBody(bodyEl: Element, currentUserEmail: string, threadId: string, anchorTimestamp: string) {
-  const root = bodyEl.cloneNode(true) as Element;
+export function extractEmailBody(bodyEl: Element, currentUserEmail: string, threadId: string, anchorTimestamp: string, carrierId = anchorTimestamp) {
+  const inert = new DOMParser().parseFromString('', 'text/html');
+  const root = inert.importNode(bodyEl, true) as Element;
   root.querySelectorAll('script,style,iframe,object,form,u.q').forEach(el => el.remove());
   // Collapsed quote history may already be loaded but hidden by the provider.
   // Keep it for extraction; sanitization removes hidden/display attributes.
@@ -116,7 +131,9 @@ export function extractEmailBody(bodyEl: Element, currentUserEmail: string, thre
     const name = a?.textContent?.trim() ?? '';
     // Date precedes the sender; stop at the time (plus optional timezone).
     const date = raw.match(/^On\s+(.+?\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?(?:\s*(?:[+-]\d{4}|GMT|UTC))?)/i)?.[1] ?? match?.[1] ?? '';
-    const who = a ? buildSender(name || address, address) : sender(raw.slice(date.length + 3).replace(/wrote:\s*$/i, ''));
+    // Gmail links the address and leaves the display name in the text beside it.
+    const labelled = sender(raw.slice(date.length + 3).replace(/wrote:\s*$/i, ''));
+    const who = a ? buildSender(labelled.name && labelled.name !== address ? labelled.name : name || address, address) : labelled;
     let quote = el.nextElementSibling;
     while (quote && !quote.matches('blockquote, .gmail_quote, .gmail_attr')) quote = quote.nextElementSibling;
     const enclosing = el.closest('blockquote, .gmail_quote');
@@ -193,20 +210,33 @@ export function extractEmailBody(bodyEl: Element, currentUserEmail: string, thre
     const bodyHtml = html.filter(Boolean).join('<br>');
     return { bodyHtml, body: htmlToText(bodyHtml) };
   }
-  const history = unique.map((h, i): ParsedMessage => {
-    const body = content(h.end, h.scopeEnd!);
+  const bodies = unique.map(h => content(h.end, h.scopeEnd!));
+  const ids = unique.map((h, i) => generateId(`${threadId}:${h.sender.email}:${h.date}:${bodies[i].body.replace(/\s+/g, ' ').trim()}:${imageIdentity(bodies[i].bodyHtml)}`, 'chain'));
+  // The innermost header enclosing this one belongs to the client that quoted
+  // it, so that author replied to this message. Siblings enclose nothing and
+  // stay unordered: only real nesting is evidence.
+  const enclosing = unique.map(h => {
+    for (let i = unique.length - 1; i >= 0; i--) if (unique[i].start < h.start && unique[i].scopeEnd! > h.start) return i;
+    return -1;
+  });
+  const drafts = unique.map((h, i): ParsedMessage => {
+    const body = bodies[i];
     const fallback = new Date((Date.parse(anchorTimestamp) || 0) - (i + 1) * 1000).toISOString();
     const date = parseEmailDate(h.date, fallback);
     // Only a clock we actually read from the header can be zone-shifted; an
     // unparsed date already falls back to the carrier's position in the thread.
     const zoneUnknown = date.timestamp !== fallback && !hasExplicitTimezone(h.date);
-    const key = `${threadId}:${h.sender.email}:${h.date}:${body.body.replace(/\s+/g, ' ').trim()}`;
-    return { id: generateId(key, 'chain'), sender: h.sender, ...date, ...(zoneUnknown ? { timestampZoneUnknown: true } : {}), ...body, source: 'quoted', recipients: h.recipients,
+    return { id: ids[i], sender: h.sender, ...date, ...(zoneUnknown ? { timestampZoneUnknown: true } : {}), ...body, source: 'quoted', recipients: h.recipients,
       isCurrentUser: !!currentUserEmail && h.sender.email === currentUserEmail.toLowerCase(), index: -i - 1 };
-  }).filter(m => m.body || /<table/i.test(m.bodyHtml ?? ''));
+  });
+  const kept = drafts.map(m => !!(m.body || /<(?:table|img)\b/i.test(m.bodyHtml ?? '')));
+  // An empty quote is dropped, so its children name the nearest surviving
+  // quoter instead — still a message that was certainly sent after them.
+  const quoter = (i: number): string => i < 0 ? carrierId : kept[i] ? ids[i] : quoter(enclosing[i]);
+  const history = drafts.map((m, i) => ({ ...m, quotedBy: quoter(enclosing[i]) })).filter((_, i) => kept[i]);
   return { ...content(0, p.text.length), history: mergeMessages(history) };
 }
 
-export function parseQuotedChain(body: Element, user: string, thread: string, anchor: string): ParsedMessage[] {
-  return extractEmailBody(body, user, thread, anchor).history;
+export function parseQuotedChain(body: Element, user: string, thread: string, anchor: string, carrier?: string): ParsedMessage[] {
+  return extractEmailBody(body, user, thread, anchor, carrier).history;
 }

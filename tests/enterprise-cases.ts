@@ -226,3 +226,47 @@ describe('Mobile and recipient-list boundaries', () => {
     expect(result.history[0].body).toBe('Original wrapped message.');
   });
 });
+
+describe('A twenty-email thread that begins with unanswered follow-ups', () => {
+  const people = [['Alice Smith', 'alice@example.com'], ['Bob Davis', 'bob@example.com'], ['Carol Jones', 'carol@example.com'], ['Dan Reed', 'dan@example.com']];
+  // Alice writes twice with no reply, then four people reply to each other.
+  const authors = [0, 0, 1, 2, 0, 1, 3, 2, 0, 1, 2, 3, 0, 1, 2, 0, 3, 1, 2, 0];
+  const bodies = authors.map((_, i) => i === 1
+    ? 'Following up on my note below since I have not heard back. We need the on-order and in-transit split confirmed before Thursday or the supplier will re-quote the whole order.'
+    : `Message ${i + 1}: noting the position on line ${i} and confirming the revised totals for the depot so the reconciliation can be closed off properly this week.`);
+  const times = authors.map((_, i) => Date.parse('2026-09-01T09:05:00Z') + i * 3600000);
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  /** The quoting client writes its own wall clock, four and a half hours from
+   * the provider header the reader sees. */
+  function attribution(i: number): string {
+    const shifted = new Date(times[i] - 4.5 * 3600000);
+    const [name, email] = people[authors[i]];
+    const clock = `${String(shifted.getUTCHours()).padStart(2, '0')}:${String(shifted.getUTCMinutes()).padStart(2, '0')}`;
+    return `<div class="gmail_attr">On ${shifted.getUTCDate()} ${MONTHS[shifted.getUTCMonth()]} ${shifted.getUTCFullYear()} at ${clock}, ${name} &lt;<a href="mailto:${email}">${email}</a>&gt; wrote:<br></div>`;
+  }
+  function chain(upto: number): string {
+    return upto < 0 ? '' : `<div class="gmail_quote">${attribution(upto)}<blockquote class="gmail_quote"><div dir="ltr">${bodies[upto]}</div>${chain(upto - 1)}</blockquote></div>`;
+  }
+  const parsed = authors.map((author, i) => {
+    const [name, email] = people[author];
+    const timestamp = new Date(times[i]).toISOString();
+    const read = extractEmailBody(element(`<div dir="ltr">${bodies[i]}</div>${chain(i - 1)}`), 'alice@example.com', 'long', timestamp);
+    return [...read.history, { id: `direct-${i}`, sender: buildSender(name, email), timestamp, body: read.body, bodyHtml: read.bodyHtml, source: 'direct' as const, index: i, isCurrentUser: false }];
+  }).flat();
+
+  it('recovers every quoted copy of every message', () => {
+    expect(parsed).toHaveLength((authors.length * (authors.length + 1)) / 2);
+  });
+  it('reports each message exactly once, in order, from its own provider header', () => {
+    const merged = mergeMessages(parsed);
+    expect(merged.map(m => m.id)).toEqual(authors.map((_, i) => `direct-${i}`));
+    expect(merged.map(m => m.timestamp)).toEqual(times.map(time => new Date(time).toISOString()));
+    expect(merged.every(m => m.source === 'direct')).toBe(true);
+    expect(merged.map(m => m.sender.name)).toEqual(authors.map(author => people[author][0]));
+  });
+  it('names the author of a recovered copy rather than repeating the address', () => {
+    const recovered = extractEmailBody(element(chain(2)), 'alice@example.com', 'long', new Date(times[3]).toISOString()).history;
+    expect(recovered.map(m => m.sender.name)).toEqual(['Alice Smith', 'Alice Smith', 'Bob Davis']);
+    expect(recovered.map(m => m.sender.email)).toEqual(['alice@example.com', 'alice@example.com', 'bob@example.com']);
+  });
+});

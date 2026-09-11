@@ -26,6 +26,12 @@ export interface ParsedMessage {
   timestampEstimated?: boolean;
   /** Wall clock taken from quoted text with no offset; the instant may be shifted by a whole timezone. */
   timestampZoneUnknown?: boolean;
+  /** Id of the message that quoted this one. A client nests the email it
+   * answers inside its own, so this records the reply order at first hand. */
+  quotedBy?: string;
+  /** The quote chain placed this message against its own clock, which is a
+   * zoneless reading and therefore sits in a different timezone to a neighbour. */
+  orderedByQuote?: boolean;
   recipients?: string[];
   historyCarrier?: boolean;
   quotedVariants?: { body: string; bodyHtml?: string }[];
@@ -45,6 +51,7 @@ export interface ThreadData {
   messages: ParsedMessage[];
   participants: Participant[];
   currentUserEmail?: string;
+  sourceTabId?: number;
   participation?: { messageId: string; kind: 'recipient' | 'authored' | 'available'; title: string; detail: string };
 }
 

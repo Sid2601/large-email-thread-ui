@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "offscreen"
   ],
   "side_panel": {
     "default_path": "src/side-panel/index.html"
@@ -63,6 +64,11 @@
     "https://mail.google.com/*",
     "https://outlook.live.com/*",
     "https://outlook.office.com/*",
-    "https://outlook.office365.com/*"
-  ]
+    "https://outlook.office365.com/*",
+    "https://*.googleusercontent.com/*"
+  ],
+  "minimum_chrome_version": "116",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' https: data: blob:;"
+  }
 }

@@ -6,6 +6,8 @@ import { highlightedEmailHtml } from '../src/side-panel/components/email-markup'
 import { attachmentUrl, saveAttachment, MAX_FILE_BYTES } from '../src/side-panel/storage/attachments';
 import { buildSender } from '../src/content/scraper-utils';
 import type { ParsedMessage } from '../src/types';
+import { parseSnapshot } from '../src/offscreen/parser';
+import type { SnapshotBatch, MessageSnapshot } from '../src/shared/snapshots';
 const anchor = '2026-09-09T12:00:00Z';
 function parse(html: string) {
   const el = document.createElement('div'); el.innerHTML = html;
@@ -140,9 +142,87 @@ describe('Quoted attribution timezones', () => {
     expect(mergeMessages([sent('first', 'motka', longSentAt, LONG), sent('second', 'motka', longSentAt - SHIFT, LONG, { timestampZoneUnknown: true })])).toHaveLength(2);
   });
 });
+describe('Reply order across correspondents in different timezones', () => {
+  // Sheffield North: the engineers write from IST and the finance team from
+  // the UK, so every attribution clock is stamped in the quoting author's own
+  // zone. Jodie's 13:28 is the message Jay answered at 09:04.
+  const bodies: Record<string, string> = {
+    jodieOpen: 'Hi all, can I confirm that I will be sent the 09/09 opening position for on-order and in-transit stock by PO for the northern site, to ensure we are all aligned?',
+    jayConfirm: 'Hi Jodie, yes, I can confirm that the details for on-order and in-transit stock will be shared for the northern site once the cutover tasks complete.',
+    premData: 'Hi Jodie, please find attached the details for on-order and in-transit stock for the northern site. Thanks, Prem.',
+    jodieFlag: 'Hi Jay, as discussed I have run the closing stock position from the 8th and attached the data. I am seeing around 40,000 in transit but your file says nil.',
+    jayExplain: 'Hi Jodie, by design the ledger holds unresolved in-transit rows for non-participating stores, because those stores have no feed to complete the receipting, so the closing position still lists them.',
+    marieQuery: 'Hi Jay, I do not quite understand what has been done to in-transit at this point. The requirement is that the cutover leaves the position reflecting what is genuinely in transit to the store.',
+  };
+  const people: Record<string, string> = { jodie: 'Jodie Piwowar', jay: 'Jay Motka', prem: 'Prem Kumar', marie: 'Marie Rumble' };
+  function attr(clock: string, who: string, quoted: string) {
+    return `<div class="gmail_attr">On ${clock}, <a href="mailto:${who}@example.com">${people[who]}</a> wrote:</div><blockquote class="gmail_quote">${quoted}</blockquote>`;
+  }
+  // Jodie asked, Jay confirmed, Prem sent the data, Jodie flagged the gap, Jay
+  // explained it, and Marie challenged Jay — each reply nesting the last.
+  const opening =
+    attr('Wed, 9 Sept 2026 at 13:28', 'jodie', `<p>${bodies.jodieFlag}</p>` +
+    attr('Wed, 9 Sept 2026 at 05:10', 'prem', `<p>${bodies.premData}</p>` +
+    attr('Tue, 8 Sept 2026 at 16:01', 'jay', `<p>${bodies.jayConfirm}</p>` +
+    attr('Tue, 8 Sept 2026 at 15:14', 'jodie', `<p>${bodies.jodieOpen}</p>`))));
+  const chain =
+    attr('Wed, 9 Sept 2026 at 14:00', 'marie', `<p>${bodies.marieQuery}</p>` +
+    attr('Wed, 9 Sept 2026 at 09:04', 'jay', `<p>${bodies.jayExplain}</p>` + opening));
+  const REPLY = 'Hi Marie, I checked and it is an implementation issue at our end; two events are published where we expected one.';
+  const order = ['jodieOpen', 'jayConfirm', 'premData', 'jodieFlag', 'jayExplain', 'marieQuery'];
+  function read() {
+    const el = document.createElement('div');
+    el.innerHTML = `<p>${REPLY}</p>${chain}`;
+    return extractEmailBody(el, 'me@example.com', 'sheffield', anchor, 'carrier');
+  }
+  function names(messages: ParsedMessage[]) {
+    return messages.map(m => order.find(key => m.body.startsWith(bodies[key].slice(0, 40))) ?? 'carrier');
+  }
+  it('follows the quote nesting when zoneless clocks read out of order', () => {
+    expect(names(read().history)).toEqual(order);
+  });
+  it('marks only the pair whose clocks contradict the reply order', () => {
+    expect(names(read().history.filter(m => m.orderedByQuote))).toEqual(['jodieFlag', 'jayExplain']);
+  });
+  it('keeps the carrier after everything it quotes', () => {
+    const { body, history } = read();
+    // The carrier's provider header reads 04:00, earlier than the 14:00 quote
+    // it encloses, because the two clocks are in different timezones.
+    const carrier: ParsedMessage = { id: 'carrier', sender: buildSender('Sid', 'me@example.com'), timestamp: '2026-09-09T04:00:00Z', body, source: 'direct', index: 0, isCurrentUser: true };
+    expect(names(mergeMessages([...history, carrier]))).toEqual([...order, 'carrier']);
+  });
+  it('stays put when merged again, and through the thread cache', () => {
+    const history = read().history;
+    const merged = mergeMessages(history);
+    expect(JSON.stringify(mergeMessages(merged))).toBe(JSON.stringify(merged));
+    threadCache.evict('sheffield');
+    threadCache.update('sheffield', history);
+    expect(names(threadCache.getThreadData('sheffield', 'Stock', 'gmail')!.messages)).toEqual(order);
+  });
+  it('joins the chains of two of my own emails through their shared message', () => {
+    const batch = { threadId: 'sheffield', currentUserEmail: 'me@example.com' } as SnapshotBatch;
+    function snapshot(id: string, html: string, timestamp: string, index: number): MessageSnapshot {
+      return { message: { id, sender: buildSender('Sid', 'me@example.com'), timestamp, body: '', source: 'direct', index, isCurrentUser: true }, html, imageSources: [] };
+    }
+    // Neither email quotes the whole thread; only the copies of Jodie's flag
+    // they share can join the older half of the chain to the newer.
+    const early = parseSnapshot(snapshot('early', `<p>Thanks Jodie, I am looking at the figures you attached now.</p>${opening}`, '2026-09-09T09:00:00Z', 0), batch);
+    const late = parseSnapshot(snapshot('late', `<p>${REPLY}</p>${chain}`, '2026-09-10T11:05:00Z', 1), batch);
+    expect(names(mergeMessages([...early, ...late]))).toEqual([...order, 'carrier', 'carrier']);
+  });
+  it('leaves sibling quotes, which prove no order, to their clocks', () => {
+    const el = document.createElement('div');
+    // Two branches forwarded side by side: neither encloses the other, so the
+    // nesting says nothing about which was sent first.
+    el.innerHTML = `<p>Compare these.</p>${attr('Wed, 9 Sept 2026 at 13:28', 'jodie', `<p>${bodies.jodieFlag}</p>`)}${attr('Wed, 9 Sept 2026 at 09:04', 'jay', `<p>${bodies.jayExplain}</p>`)}`;
+    const history = extractEmailBody(el, 'me@example.com', 'siblings', anchor, 'carrier').history;
+    expect(names(history)).toEqual(['jayExplain', 'jodieFlag']);
+    expect(history.some(m => m.orderedByQuote)).toBe(false);
+  });
+});
 describe('HTML and attachment boundaries', () => {
   it('removes active content, tracking requests and layout takeover while preserving formatting', () => {
-    const html = sanitizeEmailHtml('<script>alert(1)</script><img src="https://tracker.test/x"><div id="app" onclick="evil()" style="position:fixed;background-image:url(https://tracker.test);color:red"><a href="javascript:evil()">bad</a><a href="https://example.com">good</a><table><tr><td rowspan="2">Cell</td></tr></table></div>');
+    const html = sanitizeEmailHtml('<script>alert(1)</script><img src="https://tracker.test/x" width="1" height="1"><div id="app" onclick="evil()" style="position:fixed;background-image:url(https://tracker.test);color:red"><a href="javascript:evil()">bad</a><a href="https://example.com">good</a><table><tr><td rowspan="2">Cell</td></tr></table></div>');
     expect(html).not.toMatch(/script|tracker|onclick|position|javascript|id="app"/);
     expect(html).toContain('color:red');
     expect(html).toContain('rowspan="2"');
@@ -158,5 +238,110 @@ describe('HTML and attachment boundaries', () => {
   });
   it('rejects oversized files before accessing storage', async () => {
     await expect(saveAttachment('large', new Blob([new Uint8Array(MAX_FILE_BYTES + 1)]))).rejects.toThrow('20 MB');
+  });
+});
+
+describe('Thread order without opening every email', () => {
+  const sender = buildSender('Alice', 'alice@example.com');
+  /** A collapsed row shows "10:32" only, so its clock cannot be read and the
+   * scraper dates it from the moment the panel discovered it. */
+  function unread(index: number): ParsedMessage {
+    return { id: `u${index}`, sender, timestamp: new Date(Date.parse('2026-09-09T15:00:00Z') + index * 1000).toISOString(),
+      timestampEstimated: true, body: `Collapsed ${index}`, source: 'direct', index, isCurrentUser: false };
+  }
+  function read(index: number, timestamp: string): ParsedMessage {
+    return { id: `r${index}`, sender, timestamp, body: `Opened ${index}`, source: 'direct', index, isCurrentUser: false };
+  }
+  it('keeps unreadable clocks in their mailbox position instead of at the end', () => {
+    const merged = mergeMessages([read(0, '2026-09-08T09:00:00Z'), unread(1), unread(2), read(3, '2026-09-08T17:00:00Z'), read(4, '2026-09-09T08:00:00Z')]);
+    expect(merged.map(m => m.id)).toEqual(['r0', 'u1', 'u2', 'r3', 'r4']);
+    const times = merged.map(m => Date.parse(m.timestamp));
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+    expect(times[1]).toBeGreaterThan(Date.parse('2026-09-08T09:00:00Z'));
+    expect(times[2]).toBeLessThan(Date.parse('2026-09-08T17:00:00Z'));
+    // The time itself is still unknown and stays labelled as an estimate.
+    expect(merged[1].timestampEstimated).toBe(true);
+  });
+  it('places messages before the first and after the last readable clock', () => {
+    const merged = mergeMessages([unread(0), read(1, '2026-09-08T09:00:00Z'), unread(2)]);
+    expect(merged.map(m => m.id)).toEqual(['u0', 'r1', 'u2']);
+  });
+  it('leaves a thread alone when every clock was readable', () => {
+    const messages = [read(0, '2026-09-08T09:00:00Z'), read(1, '2026-09-08T10:00:00Z')];
+    expect(mergeMessages(messages).map(m => m.timestamp)).toEqual(messages.map(m => m.timestamp));
+  });
+  it('orders equal and unparsable clocks by mailbox position', () => {
+    const same = [read(1, '2026-09-08T09:00:00Z'), read(0, '2026-09-08T09:00:00Z')];
+    expect(mergeMessages(same).map(m => m.id)).toEqual(['r0', 'r1']);
+    const broken = [{ ...read(1, 'not a date'), timestampEstimated: undefined }, read(0, '2026-09-08T09:00:00Z')];
+    expect(mergeMessages(broken).map(m => m.id)).toEqual(['r0', 'r1']);
+  });
+});
+describe('Duplicate copies in long multi-person threads', () => {
+  const SHIFT = 4.5 * 3600 * 1000;
+  const LONG = 'By design StockMaster will have some unresolved inTransit for non-UCP stores because those stores will not have ISL to complete the actual receipting sent to SM, so the closing position shows orphaned records.';
+  const FOLLOW_UP = 'Any update on the on-order split for Sheffield North?';
+  function direct(id: string, name: string, email: string, timestamp: string, body: string, bodyHtml?: string): ParsedMessage {
+    return { id, sender: buildSender(name, email), timestamp, body, bodyHtml: bodyHtml ?? `<div>${body}</div>`, source: 'direct', index: 0, isCurrentUser: false };
+  }
+  /** The same message as a later email quoted it: the attribution clock is the
+   * sender's wall time, so it reads a whole timezone from the provider header. */
+  function copy(id: string, name: string, email: string, timestamp: string, body: string, bodyHtml?: string): ParsedMessage {
+    return { ...direct(id, name, email, new Date(Date.parse(timestamp) - SHIFT).toISOString(), body, bodyHtml),
+      timestampZoneUnknown: true, source: 'quoted', index: -1 };
+  }
+  it('assigns each copy of two identical follow-ups to the right message', () => {
+    const merged = mergeMessages([
+      direct('first', 'Alice', 'a@example.com', '2026-09-08T09:00:00Z', FOLLOW_UP),
+      direct('second', 'Alice', 'a@example.com', '2026-09-08T15:00:00Z', FOLLOW_UP),
+      copy('q-first', 'Alice', 'a@example.com', '2026-09-08T09:00:00Z', FOLLOW_UP),
+      copy('q-second', 'Alice', 'a@example.com', '2026-09-08T15:00:00Z', FOLLOW_UP),
+    ]);
+    expect(merged.map(m => m.id)).toEqual(['first', 'second']);
+  });
+  it('merges a copy whose attribution named its author without an address', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Prem Kumar', 'prem.kumar@example.com', '2026-09-09T04:10:00Z', LONG),
+      copy('quoted', 'Prem Kumar', 'unknown:Prem Kumar', '2026-09-09T04:10:00Z', LONG),
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].sender.email).toBe('prem.kumar@example.com');
+  });
+  it('still separates copies whose only identity is a placeholder name', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Unknown', 'unknown:Unknown', '2026-09-09T04:10:00Z', LONG),
+      copy('quoted', 'Unknown', 'unknown:Unknown', '2026-09-09T04:10:00Z', LONG),
+    ]);
+    expect(merged).toHaveLength(2);
+  });
+  it('merges a copy whose inline picture was re-addressed by the provider', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://ci3.googleusercontent.com/proxy/AAA"></div>`),
+      copy('quoted', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="blob:https://mail.google.com/9f1c"></div>`),
+    ]);
+    expect(merged).toHaveLength(1);
+  });
+  it('keeps copies apart when the pictures themselves differ', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://mail.google.com/one.png"></div>`),
+      copy('quoted', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://mail.google.com/two.png"></div>`),
+    ]);
+    expect(merged).toHaveLength(2);
+  });
+  it('ignores a query the provider varies around one picture', () => {
+    const merged = mergeMessages([
+      direct('sent', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://mail.google.com/mail/u/0?attid=0.1&permmsgid=msg-f:1"></div>`),
+      copy('quoted', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', LONG, `<div>${LONG}<img src="https://mail.google.com/mail/u/0?attid=0.1&permmsgid=msg-f:2"></div>`),
+    ]);
+    expect(merged).toHaveLength(1);
+  });
+  it('resolves short copies from an offset two separate copies agree on', () => {
+    const merged = mergeMessages([
+      direct('long', 'Bob', 'b@example.com', '2026-09-09T08:04:00Z', LONG),
+      copy('q-long', 'Bob', 'b@example.com', '2026-09-09T08:04:00Z', LONG),
+      direct('short', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', 'Thanks, noted.'),
+      copy('q-short', 'Alice', 'a@example.com', '2026-09-09T04:10:00Z', 'Thanks, noted.'),
+    ]);
+    expect(merged.map(m => m.id)).toEqual(['short', 'long']);
   });
 });

@@ -1,12 +1,7 @@
-import type { ExtensionMessage, ParsedMessage } from '../types';
-import { buildSender, debounce, generateId, mimeFromExtension } from './scraper-utils';
-import { readRecipients } from './message-metadata';
-import { extractEmailBody, parseEmailDate } from './quoted-chain-parser';
-import { threadCache } from './thread-cache';
-
-// Set to true only during local development — never commit as true.
-const DEBUG = false;
-const log = (...args: unknown[]) => { if (DEBUG) console.log('[ThreadLens/Outlook]', ...args); };
+import type { ParsedMessage } from '../types';
+import { buildSender, generateId, mimeFromExtension } from './scraper-utils';
+import { readRecipients, readTimestamp } from './message-metadata';
+import { startReader, imageSources } from './incremental-reader';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -59,17 +54,6 @@ const ITEM_SELECTORS = [
   '[class*="ConversationItem"]',
   '[role="option"]',
 ] as const;
-
-function findMessageItems(pane: Element): HTMLElement[] {
-  for (const sel of ITEM_SELECTORS) {
-    const items = Array.from(pane.querySelectorAll<HTMLElement>(sel));
-    if (items.length > 0) {
-      log(`Item selector matched: ${sel} (${items.length} items)`);
-      return items;
-    }
-  }
-  return [];
-}
 
 /**
  * Ordered strategies for extracting sender info from a message item element.
@@ -176,144 +160,36 @@ function getSubject(): string {
 // Core scrape function
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Track active thread so we can evict stale cache entries on navigation
-let activeThreadId = '';
-let threadAnchor = Date.now();
-
-function scrape(): void {
-  const pane = document.querySelector<HTMLElement>(
-    '[data-app-section="ConversationContainer"], [class*="ReadingPane"], [role="region"][aria-label*="Reading" i]'
-  );
-  const convEl = pane?.querySelector<HTMLElement>('[data-convid]') ??
-    (pane?.matches('[data-convid]') ? pane : null) ??
-    document.querySelector<HTMLElement>('[data-convid][aria-selected="true"], [aria-selected="true"] [data-convid]');
-  const threadId = convEl?.getAttribute('data-convid') ?? '';
-  if (!pane || !threadId) {
-    if (activeThreadId) {
-      threadCache.evict(activeThreadId); activeThreadId = '';
-      chrome.runtime.sendMessage({ type: 'CLEAR_THREAD' }).catch(() => {});
-    }
-    return;
+function readingPane() {
+  return document.querySelector<HTMLElement>('[data-app-section="ConversationContainer"], [class*="ReadingPane"], [role="region"][aria-label*="Reading" i]');
+}
+function messageElement(target: Element): HTMLElement | null {
+  for (const selector of ITEM_SELECTORS) {
+    const found = target.closest<HTMLElement>(selector);
+    if (found) return found;
   }
-  if (activeThreadId !== threadId) {
-    threadCache.evict(activeThreadId);
-    threadAnchor = Date.now();
-    activeThreadId = threadId;
-  }
-
-  const itemEls = findMessageItems(pane);
-  if (itemEls.length === 0) {
-    log('No message items found');
-    return;
-  }
-
-  const currentUserEmail = getCurrentUserEmail();
-  log(`Current user: ${currentUserEmail || '(unknown)'}`);
-
-  const messages: ParsedMessage[] = [];
-  itemEls.forEach((el, index) => {
-    const { name, email } = extractSender(el, index);
-    const resolvedEmail = email || `unknown-${index}@outlook`;
-
-    const timeEl = el.querySelector<HTMLElement>('time[datetime]');
-    const rawDate = timeEl?.getAttribute('datetime') ?? '';
-    const { timestamp, timestampEstimated } = parseEmailDate(rawDate, new Date(threadAnchor + index * 1000).toISOString());
-
-    const bodyEl = el.querySelector(BODY_SELECTORS.join(','));
-    if (!bodyEl) return;
-    const { body, bodyHtml, history } = extractEmailBody(bodyEl, currentUserEmail, threadId, timestamp);
-    messages.push(...history);
+  return null;
+}
+startReader({
+  client: 'outlook', messageSelector: ITEM_SELECTORS.join(','), bodySelector: BODY_SELECTORS.join(','),
+  messageElement,
+  threadId() {
+    const pane = readingPane();
+    return (pane?.querySelector('[data-convid]') ?? (pane?.matches('[data-convid]') ? pane : null) ?? document.querySelector('[data-convid][aria-selected="true"], [aria-selected="true"] [data-convid]'))?.getAttribute('data-convid') ?? '';
+  }, subject: getSubject, currentUser: getCurrentUserEmail,
+  snapshot(el, index, anchor, previous, bodyDirty, position = index) {
+    if (!readingPane()?.contains(el)) return null;
+    const bodyEl = el.querySelector(BODY_SELECTORS.join(',')); if (!bodyEl) return null;
+    if (messageElement(bodyEl) !== el) return null;
+    const { name, email } = extractSender(el, previous?.message.index ?? index);
+    const user = getCurrentUserEmail();
+    const date = readTimestamp(el, 'time[datetime], time[title], [class*="Time"][title], [class*="Time"] [title]', previous?.message.timestamp || new Date(anchor + position * 1000).toISOString());
     const attachments = Array.from(el.querySelectorAll<HTMLAnchorElement>('a[download], a[href*="attachment" i], a[href*="GetFileAttachment" i]')).map(a => {
       const name = a.getAttribute('download') || a.getAttribute('title') || a.textContent?.trim() || 'Attachment';
       return { name, mimeType: mimeFromExtension(name), sizeLabel: '', downloadUrl: a.href };
     });
-    if (!body && !attachments.length && !history.length) return;
-
-    messages.push({
-      id: el.getAttribute('data-unique-id') || generateId(`${threadId}:${resolvedEmail}:${index}`, timestamp),
-      sender: buildSender(name, resolvedEmail),
-      timestamp,
-      body: body || (history.length ? 'This email contains only quoted history, shown separately above.' : ''),
-      historyCarrier: !body && history.length > 0,
-      bodyHtml,
-      attachments,
-      source: 'direct',
-      timestampEstimated,
-      recipients: readRecipients(el, bodyEl),
-      isCurrentUser: currentUserEmail
-        ? resolvedEmail.toLowerCase() === currentUserEmail.toLowerCase()
-        : false,
-      index,
-    });
-  });
-
-  if (messages.length === 0) {
-    log('No messages with body extracted');
-    return;
-  }
-
-  // Merge into cache — only proceed if new messages appeared
-  const changed = threadCache.update(threadId, messages);
-  if (!changed) {
-    log('No new messages — skipping send');
-    return;
-  }
-
-  const threadData = threadCache.getThreadData(threadId, getSubject(), 'outlook', currentUserEmail);
-  if (!threadData) return;
-
-  log(`Sending ${threadData.messages.length} messages to Side Panel`);
-
-  chrome.runtime.sendMessage({ type: 'THREAD_PARSED', data: threadData } satisfies ExtensionMessage)
-    .catch(() => {});
-}
-
-const debouncedScrape = debounce(scrape, 400);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MutationObserver — attach to the reading pane or fall back to document.body
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Keep one observer instance so we don't stack multiple observers if the
- * reading pane re-mounts (e.g., Outlook SPA navigations).
- */
-let observer: MutationObserver | null = null;
-
-function attachObserver(): void {
-  const target = document.body;
-
-  if (observer) {
-    observer.disconnect();
-  }
-
-  observer = new MutationObserver(debouncedScrape);
-  observer.observe(target, { childList: true, subtree: true });
-  log(`Observer attached to: ${target.tagName}#${target.id || target.className.slice(0, 30)}`);
-}
-
-// Bootstrap: attach observer, then run an immediate scrape
-attachObserver();
-debouncedScrape();
-
-// Re-attach when Outlook's SPA loads the reading pane after initial DOM is ready
-// (the [data-convid] element might not exist yet on first load)
-let bootstrapRetries = 0;
-const MAX_BOOTSTRAP_RETRIES = 5;
-
-function bootstrapRetry(): void {
-  if (bootstrapRetries >= MAX_BOOTSTRAP_RETRIES) return;
-  bootstrapRetries++;
-
-  if (!document.querySelector('[data-convid]')) {
-    setTimeout(() => {
-      attachObserver();
-      debouncedScrape();
-      bootstrapRetry();
-    }, 1000 * bootstrapRetries);
-  }
-}
-
-bootstrapRetry();
-
-chrome.runtime.onMessage.addListener(message => { if (message.type === 'SCRAPE_THREAD') { threadCache.evict(activeThreadId); debouncedScrape(); } });
+    const message: ParsedMessage = { id: el.getAttribute('data-unique-id') || previous?.message.id || generateId(`${email}:${index}`, String(anchor)), sender: buildSender(name, email), ...date,
+      body: '', source: 'direct', index: position, isCurrentUser: !!user && email.toLowerCase() === user.toLowerCase(), recipients: readRecipients(el, bodyEl), attachments };
+    return { message, html: !bodyDirty && previous ? previous.html : bodyEl.innerHTML, imageSources: !bodyDirty && previous ? previous.imageSources : imageSources(bodyEl) };
+  },
+});

@@ -1,23 +1,9 @@
-import type { ParsedMessage, Attachment, ExtensionMessage } from '../types';
-import { buildSender, debounce, generateId, mimeFromExtension } from './scraper-utils';
-import { readRecipients } from './message-metadata';
-import { threadCache } from './thread-cache';
-import { extractEmailBody, mergeMessages, parseEmailDate } from './quoted-chain-parser';
+import type { Attachment } from '../types';
+import { buildSender, generateId, mimeFromExtension } from './scraper-utils';
+import { readRecipients, readTimestamp } from './message-metadata';
+import { startReader, imageSources } from './incremental-reader';
+import type { MessageSnapshot } from '../shared/snapshots';
 
-// Set to true only during local development — never commit as true.
-const DEBUG = false;
-const log = (...args: unknown[]) => { if (DEBUG) console.log('[ThreadLens]', ...args); };
-
-// Retry schedule (ms) when initial parse returns 0 messages.
-// Starts at 1200ms to avoid colliding with tryExpandAll's own 800ms timeout.
-const RETRY_DELAYS = [1200, 2000, 3500];
-let retryIndex = 0;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-let activeThreadId = '';
-let threadAnchor = Date.now();
-let lastSentUser = '';
-let expandAttempted = false;
 function getCurrentUserEmail(): string {
   const accountEl = document.querySelector<HTMLElement>('[data-ogsr-up] [data-email]');
   if (accountEl) return accountEl.getAttribute('data-email') ?? '';
@@ -64,6 +50,10 @@ function tryExpandAll(): void {
   });
 }
 
+// Header times only: an expanded message spells the date out in .g3, and a
+// collapsed row keeps it in the title/tooltip of its date cell.
+const TIME_SELECTOR = '.g3, time[datetime], .gH [title], .gH [data-tooltip], .xW [title], .xY [title]';
+
 function scrapeAttachments(msgEl: HTMLElement): Attachment[] {
   const chips: Element[] = [];
   // Try multiple Gmail attachment chip selectors
@@ -89,172 +79,22 @@ function scrapeAttachments(msgEl: HTMLElement): Attachment[] {
   });
 }
 
-function parseMessages(currentUserEmail: string): ParsedMessage[] {
-  const seen = new Set<string>();
-  const messages: ParsedMessage[] = [];
-
-  const messageEls = Array.from(
-    document.querySelectorAll<HTMLElement>('[data-message-id]')
-  ).filter(el => {
-    const id = el.getAttribute('data-message-id') ?? '';
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-
-  log(`Found ${messageEls.length} message containers`);
-
-  messageEls.forEach((el, index) => {
-    // Use Gmail's own data-message-id directly as the stable ParsedMessage ID.
-    // This is assigned by Gmail's server and is globally unique — eliminates the
-    // same-sender/same-second collision risk that a derived hash cannot avoid.
-    const domMessageId = el.getAttribute('data-message-id') ?? generateId(`fallback-${index}`, new Date().toISOString());
-
-    const senderEl = el.querySelector<HTMLElement>('.gD, [email]');
-    const senderName = senderEl?.getAttribute('name') ?? senderEl?.textContent?.trim() ?? 'Unknown';
-    let senderEmail = senderEl?.getAttribute('email') ?? '';
-    if (!senderEmail) {
-      const mailto = el.querySelector<HTMLAnchorElement>('a[href^="mailto:"]');
-      senderEmail = mailto?.href.replace('mailto:', '') ?? `sender-${index}@unknown`;
-    }
-
-    const timeEl = el.querySelector<HTMLElement>('.g3, [data-tooltip]');
-    const rawTime = timeEl?.getAttribute('title') || timeEl?.getAttribute('data-tooltip') || timeEl?.textContent?.trim() || '';
-    const { timestamp, timestampEstimated } = parseEmailDate(rawTime, new Date(threadAnchor + index * 1000).toISOString());
+startReader({
+  client: 'gmail', messageSelector: '[data-message-id]', bodySelector: '.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]',
+  threadId: getThreadId, subject: getSubject, currentUser: getCurrentUserEmail, expand: tryExpandAll,
+  snapshot(el, index, anchor, previous, bodyDirty, position = index): MessageSnapshot | null {
     const bodyEl = el.querySelector('.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]');
-    if (!bodyEl) return;
-    const { body, bodyHtml, history } = extractEmailBody(bodyEl, currentUserEmail, activeThreadId, timestamp);
-    messages.push(...history);
-    const attachments = scrapeAttachments(el);
-    if (!body && !attachments.length && !history.length) return;
-
-    messages.push({
-      id: domMessageId,
-      sender: buildSender(senderName, senderEmail),
-      timestamp,
-      body: body || (history.length ? 'This email contains only quoted history, shown separately above.' : ''),
-      historyCarrier: !body && history.length > 0,
-      source: 'direct',
-      recipients: readRecipients(el, bodyEl),
-      timestampEstimated,
-      isCurrentUser: currentUserEmail
-        ? senderEmail.toLowerCase() === currentUserEmail.toLowerCase()
-        : false,
-      index,
-      ...(attachments.length > 0 ? { attachments } : {}),
-      ...(bodyHtml ? { bodyHtml } : {}),
-    });
-  });
-
-  return messages;
-}
-
-function clearRetryTimer(): void {
-  if (retryTimer !== null) {
-    clearTimeout(retryTimer);
-    retryTimer = null;
-  }
-}
-
-function scheduleRetry(): void {
-  if (retryIndex >= RETRY_DELAYS.length) return;
-  const delay = RETRY_DELAYS[retryIndex++];
-  log(`Scheduling retry in ${delay}ms (attempt ${retryIndex})`);
-  // Null retryTimer before calling scrapeAndSend so any future
-  // `if (retryTimer !== null)` guard sees a clean state.
-  retryTimer = setTimeout(() => { retryTimer = null; scrapeAndSend(); }, delay);
-}
-
-function onThreadChanged(newThreadId: string): void {
-  if (activeThreadId && activeThreadId !== newThreadId) {
-    threadCache.evict(activeThreadId);
-  }
-  activeThreadId = newThreadId;
-  lastSentUser = '';
-  threadAnchor = Date.now();
-  expandAttempted = false;
-  retryIndex = 0;
-  clearRetryTimer();
-}
-
-function scrapeAndSend(): void {
-  const threadId = getThreadId();
-
-  if (!threadId) {
-    if (activeThreadId) {
-      onThreadChanged('');
-      chrome.runtime.sendMessage({ type: 'CLEAR_THREAD' }).catch(() => {});
-    }
-    log('No thread ID in URL — not in a thread view');
-    return;
-  }
-
-  // Detect thread navigation and reset state
-  if (threadId !== activeThreadId) {
-    onThreadChanged(threadId);
-  }
-
-  if (!expandAttempted) {
-    expandAttempted = true;
-    tryExpandAll();
-    // Safety net: re-scrape after expand settles (separate from retry backoff)
-    setTimeout(debouncedScrape, 800);
-  }
-
-  const currentUserEmail = getCurrentUserEmail();
-
-  // Parse direct messages and included history from every expanded email.
-  const domMessages = parseMessages(currentUserEmail);
-  log(`Direct and recovered: ${domMessages.length} messages`);
-
-  const incoming = mergeMessages(domMessages);
-
-  if (incoming.length === 0) {
-    scheduleRetry();
-    return;
-  }
-
-  // Retry is no longer needed — messages found
-  clearRetryTimer();
-  retryIndex = 0;
-
-  // Update the cache — returns true only if new messages were found
-  const changed = threadCache.update(threadId, incoming);
-  if (!changed && currentUserEmail === lastSentUser) {
-    log('No new messages — skipping send');
-    return;
-  }
-
-  const threadData = threadCache.getThreadData(threadId, getSubject(), 'gmail', currentUserEmail);
-  if (!threadData) return;
-  lastSentUser = currentUserEmail;
-
-  log(`Sending ${threadData.messages.length} messages to Side Panel`);
-
-  chrome.runtime.sendMessage({ type: 'THREAD_PARSED', data: threadData } satisfies ExtensionMessage)
-    .catch(() => {});
-}
-
-const debouncedScrape = debounce(scrapeAndSend, 350);
-
-// hashchange fires on every Gmail SPA navigation (inbox → thread → inbox etc.)
-// More reliable than MutationObserver for detecting thread switches.
-window.addEventListener('hashchange', () => {
-  const newId = getThreadId();
-  // Only reset if we actually moved to a different thread (not a label-vs-search hash prefix change)
-  if (newId && newId !== activeThreadId) {
-    log(`hashchange → new thread: ${newId}`);
-    onThreadChanged(newId);
-  }
-  debouncedScrape();
+    if (!bodyEl) return null;
+    const currentUserEmail = getCurrentUserEmail();
+    const senderEl = el.querySelector<HTMLElement>('.gD, [email]');
+    const name = senderEl?.getAttribute('name') || senderEl?.textContent?.trim() || 'Unknown';
+    const email = senderEl?.getAttribute('email') || senderEl?.querySelector<HTMLAnchorElement>('a[href^="mailto:"]')?.getAttribute('href')?.slice(7) || previous?.message.sender.email || `sender-${index}@unknown`;
+    const date = readTimestamp(el, TIME_SELECTOR, previous?.message.timestamp || new Date(anchor + position * 1000).toISOString());
+    return {
+      message: { id: el.getAttribute('data-message-id') || previous?.message.id || generateId(email, String(index)), sender: buildSender(name, email), ...date,
+        body: '', source: 'direct', index: position, isCurrentUser: !!currentUserEmail && email.toLowerCase() === currentUserEmail.toLowerCase(),
+        recipients: readRecipients(el, bodyEl), attachments: scrapeAttachments(el) },
+      html: !bodyDirty && previous ? previous.html : bodyEl.innerHTML, imageSources: !bodyDirty && previous ? previous.imageSources : imageSources(bodyEl),
+    };
+  },
 });
-
-// MutationObserver catches content changes within the current thread
-const observeTarget = document.querySelector('[role="main"]') ?? document.body;
-const observer = new MutationObserver(debouncedScrape);
-observer.observe(observeTarget, { childList: true, subtree: true });
-
-log('Content script loaded');
-debouncedScrape();
-
-chrome.runtime.onMessage.addListener(message => { if (message.type === 'SCRAPE_THREAD') { threadCache.evict(activeThreadId); debouncedScrape(); } });

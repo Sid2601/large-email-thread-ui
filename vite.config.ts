@@ -21,6 +21,7 @@ export default defineConfig({
     // Chrome cannot reliably reuse extension preloads across execution worlds.
     // Keep normal module imports; omit the optional preload hints/polyfill.
     modulePreload: false,
+    rollupOptions: { input: { offscreen: 'src/offscreen/index.html' } },
   },
   define: {
     // Injected as a build-time string constant — zero runtime overhead.

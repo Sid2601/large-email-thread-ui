@@ -1,21 +1,22 @@
 import type { ParsedMessage, Attachment } from '../../types';
-import { highlightedEmailHtml } from './email-markup';
+import { RichBody } from './RichBody';
 import { QuotedText } from './QuotedText';
 import { AttachmentChip } from './AttachmentChip';
 
 interface Props {
   message: ParsedMessage;
+  tabId?: number;
   showSenderName: boolean;
   searchQuery?: string;
 }
 
-function QuotedVariants({ message, query }: { message: ParsedMessage; query: string }) {
+function QuotedVariants({ message, query, tabId }: { message: ParsedMessage; query: string; tabId?: number }) {
   if (!message.quotedVariants?.length) return null;
   return <details className="mt-2 border-t pt-2 text-xs">
     <summary className="cursor-pointer">Quoted copy differs ({message.quotedVariants.length})</summary>
     <p className="my-1">A likely repeated quote has different wording. The copy is preserved here for comparison.</p>
     {message.quotedVariants.map((variant, index) => <div key={index} className="email-body mt-2 border-t pt-2">
-      {variant.bodyHtml ? <div dangerouslySetInnerHTML={{ __html: highlightedEmailHtml(variant.bodyHtml, query) }} /> : <p className="whitespace-pre-wrap">{variant.body}</p>}
+      {variant.bodyHtml ? <RichBody html={variant.bodyHtml} query={query} tabId={tabId} /> : <p className="whitespace-pre-wrap">{variant.body}</p>}
     </div>)}
   </details>;
 }
@@ -31,7 +32,7 @@ function highlightText(text: string, query: string): React.ReactNode {
   );
 }
 
-export function MessageBubble({ message, showSenderName, searchQuery = '' }: Props) {
+export function MessageBubble({ message, showSenderName, searchQuery = '', tabId }: Props) {
   const { sender, body, quotedText, timestamp, isCurrentUser } = message;
 
   const time = (() => {
@@ -44,7 +45,9 @@ export function MessageBubble({ message, showSenderName, searchQuery = '' }: Pro
   })();
   // No provider header was available for this copy, only a quoted clock written
   // without an offset, so say so rather than presenting it as exact.
-  const timeHint = message.timestampZoneUnknown && !message.timestampEstimated
+  const timeHint = message.orderedByQuote
+    ? 'Placed by the quoted reply chain, not by this clock. The time was read from quoted text, which records no timezone, so it sits in a different one to its neighbour.'
+    : message.timestampZoneUnknown && !message.timestampEstimated
     ? 'Read from quoted text, which records no timezone. This can be offset from the original send time.'
     : undefined;
 
@@ -54,11 +57,11 @@ export function MessageBubble({ message, showSenderName, searchQuery = '' }: Pro
         <div className="max-w-[80%]">
           <div className="bg-blue-500 text-white rounded-2xl rounded-tr-sm px-3 py-2 text-sm">
             {message.bodyHtml
-              ? <div className="text-sm email-body" dangerouslySetInnerHTML={{ __html: highlightedEmailHtml(message.bodyHtml, searchQuery) }} />
+              ? <RichBody html={message.bodyHtml} query={searchQuery} tabId={tabId} />
               : <p className="whitespace-pre-wrap break-words">{highlightText(body, searchQuery)}</p>
             }
             {quotedText && <QuotedText text={quotedText} />}
-          <QuotedVariants message={message} query={searchQuery} />
+          <QuotedVariants message={message} query={searchQuery} tabId={tabId} />
           </div>
           {message.attachments && message.attachments.length > 0 && (
             <div className="mt-2 flex flex-col gap-1">
@@ -87,11 +90,11 @@ export function MessageBubble({ message, showSenderName, searchQuery = '' }: Pro
         )}
         <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-tl-sm px-3 py-2 text-sm shadow-sm border border-gray-100 dark:border-gray-700">
           {message.bodyHtml
-            ? <div className="text-sm email-body" dangerouslySetInnerHTML={{ __html: highlightedEmailHtml(message.bodyHtml, searchQuery) }} />
+            ? <RichBody html={message.bodyHtml} query={searchQuery} tabId={tabId} />
             : <p className="whitespace-pre-wrap break-words">{highlightText(body, searchQuery)}</p>
           }
           {quotedText && <QuotedText text={quotedText} />}
-          <QuotedVariants message={message} query={searchQuery} />
+          <QuotedVariants message={message} query={searchQuery} tabId={tabId} />
         </div>
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-2 flex flex-col gap-1">

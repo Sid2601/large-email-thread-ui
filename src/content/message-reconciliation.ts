@@ -1,4 +1,58 @@
-import type { ParsedMessage, ThreadData } from '../types';
+import type { ParsedMessage, Sender, ThreadData } from '../types';
+
+/** Providers rewrite the same picture's address in every copy, so compare what
+ * survives that: the proxied original, a data payload, or a content id. */
+function imageKeys(html = ''): string[] {
+  return (html.match(/<img\b[^>]*>/gi) ?? []).map(tag => {
+    const raw = tag.match(/(?:src|data-tl-image-src)="([^"]*)"/i)?.[1] ?? '';
+    const proxied = /#(https?:\/\/[^"\s]+)$/.exec(raw)?.[1];
+    if (proxied) return proxied;
+    if (/^data:/i.test(raw)) return raw.slice(0, 128);
+    if (/^cid:/i.test(raw)) return raw.toLowerCase();
+    // A blob handle or bare proxy token is minted per copy and names no picture.
+    if (/^blob:/i.test(raw) || /googleusercontent\.com\/proxy\//i.test(raw)) return '?';
+    // Providers vary the query (message id, size, token) around one picture.
+    try { const url = new URL(raw); return `${url.origin}${url.pathname}`; } catch { return raw || '?'; }
+  });
+}
+export function imageIdentity(html = ''): string {
+  return imageKeys(html).join('|');
+}
+// Every pairwise comparison re-reads both bodies; each is scanned once.
+const pictures = new WeakMap<ParsedMessage, string[]>();
+function picturesOf(message: ParsedMessage): string[] {
+  let value = pictures.get(message);
+  if (value === undefined) { value = imageKeys(message.bodyHtml); pictures.set(message, value); }
+  return value;
+}
+/** Different pictures, not merely differently addressed ones. */
+function imagesConflict(a: ParsedMessage, b: ParsedMessage): boolean {
+  const left = picturesOf(a), right = picturesOf(b);
+  // A quoted copy that dropped the pictures is still the same message.
+  if (!left.length || !right.length) return false;
+  if (left.length !== right.length) return true;
+  return left.some((key, i) => key !== '?' && right[i] !== '?' && key !== right[i]);
+}
+function nameKey(sender: Sender): string {
+  return sender.name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+/** A placeholder such as "Unknown" identifies nobody, so it can confirm nothing. */
+function specificName(sender: Sender): string {
+  const key = nameKey(sender);
+  return key.length >= 4 && !/^(?:unknown|sender|unknownsender|noreply|noreplies|mailer|daemon|automated|support)$/.test(key) ? key : '';
+}
+/** Quoted attributions often name an author without recording an address. A
+ * name alone can only confirm an address seen elsewhere, never replace it. */
+function sameAuthor(a: ParsedMessage, b: ParsedMessage): boolean {
+  const left = a.sender.email.toLowerCase().replace(/\s/g, ''), right = b.sender.email.toLowerCase().replace(/\s/g, '');
+  if (left === right) return left.includes('@') || !!specificName(a.sender);
+  const named = left.startsWith('unknown:') ? a : right.startsWith('unknown:') ? b : undefined;
+  if (!named) return false;
+  const addressed = named === a ? b : a;
+  if (!addressed.sender.email.includes('@')) return false;
+  const name = specificName(named.sender);
+  return !!name && (name === nameKey(addressed.sender) || name === addressed.sender.email.split('@')[0].replace(/[^a-z0-9]+/g, ''));
+}
 
 export function normalizedBody(body: string): string {
   return body.replace(/^\s*>+\s?/gm, '').normalize('NFKC').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -9,11 +63,18 @@ function core(body: string): string {
   const signature = text.search(/\n\s*(?:--\s*$|(?:kind |best )?regards[,!.]?\s*$|many thanks[,!.]?\s*$|thanks[,!.]?\s*$|sent from my (?:iphone|ipad|android))/im);
   return normalizedBody(signature >= 0 ? text.slice(0, signature) : text);
 }
+// A long thread compares every pair repeatedly; each body is reduced once.
+const cores = new WeakMap<ParsedMessage, string>();
+function coreOf(message: ParsedMessage): string {
+  let value = cores.get(message);
+  if (value === undefined) { value = core(message.body); cores.set(message, value); }
+  return value;
+}
 function sameTime(a: ParsedMessage, b: ParsedMessage, exact: boolean): boolean {
   const left = Date.parse(a.timestamp), right = Date.parse(b.timestamp);
   if (Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 60000) return true;
   // Unknown-time long copies can match, but tiny repeated acknowledgements cannot.
-  return exact && (a.timestampEstimated === true || b.timestampEstimated === true) && core(a.body).length >= 100;
+  return exact && (a.timestampEstimated === true || b.timestampEstimated === true) && coreOf(a).length >= 100;
 }
 /** A provider header read in the reader's own timezone is solid time evidence. */
 function anchoredTime(m: ParsedMessage): boolean {
@@ -58,28 +119,27 @@ function nearCopy(a: string, b: string): boolean {
   // Only small insertions, not substitutions, changed numbers or negations.
   return cursor === short.length && !added.some(word => /\d|^(?:no|not|never|cancel|cancelled|revoked|reject|rejected|instead|except)$/i.test(word));
 }
-const LONG_ENOUGH = 160, SPECIFIC_ENOUGH = 40;
+const LONG_ENOUGH = 160, SPECIFIC_ENOUGH = 40, EXACT_ENOUGH = 24, CONFIRMED_ENOUGH = 12;
 function match(a: ParsedMessage, b: ParsedMessage, offsets: number[]): boolean {
   if (a.id === b.id) return true;
+  if (imagesConflict(a, b)) return false;
   if (a.source !== 'quoted' && b.source !== 'quoted') return false;
-  if (a.sender.email.toLowerCase().replace(/\s/g, '') !== b.sender.email.toLowerCase().replace(/\s/g, '')) return false;
-  // Unknown names are not enough evidence to merge independent senders.
-  if (!a.sender.email.includes('@')) return false;
-  const x = core(a.body), y = core(b.body);
+  if (!sameAuthor(a, b)) return false;
+  const x = coreOf(a), y = coreOf(b);
   if (!x || !y) return false;
   const exact = x === y;
   if (sameTime(a, b, exact)) return exact || nearCopy(x, y);
   if (zoneShifted(a, b)) {
     const offset = zoneOffset(a, b);
-    // An offset-shaped gap alone is weak, so require a substantial body — or an
-    // offset this same conversation has already confirmed on a long copy.
+    // An offset-shaped gap alone is weak, so require a body specific enough to
+    // be one message — or an offset this same conversation has already proven.
     const confirmed = offset !== undefined && offsets.some(known => Math.abs(known - offset) < 60000);
     const shortest = Math.min(x.length, y.length);
-    if (shortest >= LONG_ENOUGH || (confirmed && shortest >= SPECIFIC_ENOUGH)) {
-      // With an anchored counterpart a small edited insertion is still the same
-      // message; between two zone-unknown quotes require an identical body.
-      return anchoredTime(a) || anchoredTime(b) ? exact || nearCopy(x, y) : exact;
-    }
+    // Word-for-word copies of a whole sentence are the same message; an edited
+    // near-copy still needs a long body, or a confirmed offset and some length.
+    if (exact) return shortest >= (confirmed ? CONFIRMED_ENOUGH : LONG_ENOUGH);
+    // Only an anchored counterpart can date an edited copy.
+    if ((anchoredTime(a) || anchoredTime(b)) && (shortest >= LONG_ENOUGH || (confirmed && shortest >= SPECIFIC_ENOUGH))) return nearCopy(x, y);
   }
   // Missing-year dates are estimates, but retain a day/clock for matching.
   if (a.timestampEstimated || b.timestampEstimated) {
@@ -95,8 +155,8 @@ function timeRank(m: ParsedMessage): number {
 }
 function combine(primary: ParsedMessage, copy: ParsedMessage): ParsedMessage {
   const variants = [...(primary.quotedVariants ?? []), ...(copy.quotedVariants ?? [])];
-  if (normalizedBody(primary.body) !== normalizedBody(copy.body)) variants.push({ body: copy.body, bodyHtml: copy.bodyHtml });
-  const distinct = variants.filter((v, i) => normalizedBody(v.body) !== normalizedBody(primary.body) && variants.findIndex(other => normalizedBody(other.body) === normalizedBody(v.body)) === i);
+  if (normalizedBody(primary.body) !== normalizedBody(copy.body) || imageIdentity(primary.bodyHtml) !== imageIdentity(copy.bodyHtml)) variants.push({ body: copy.body, bodyHtml: copy.bodyHtml });
+  const distinct = variants.filter((v, i) => (normalizedBody(v.body) !== normalizedBody(primary.body) || imageIdentity(v.bodyHtml) !== imageIdentity(primary.bodyHtml)) && variants.findIndex(other => normalizedBody(other.body) === normalizedBody(v.body) && imageIdentity(other.bodyHtml) === imageIdentity(v.bodyHtml)) === i);
   const attachments = [...(primary.attachments ?? []), ...(copy.attachments ?? [])];
   const recipients = Array.from(new Set([...(primary.recipients ?? []), ...(copy.recipients ?? [])]));
   return { ...primary,
@@ -109,30 +169,161 @@ function combine(primary: ParsedMessage, copy: ParsedMessage): ParsedMessage {
   };
 }
 
+/** The gap between a quoted copy and its counterpart, or 0 when their clocks agree. */
+function pairOffset(a: ParsedMessage, b: ParsedMessage): number | undefined {
+  return zoneShifted(a, b) ? zoneOffset(a, b) : 0;
+}
+/** One quoting client wrote every copy in this thread, so it used a single
+ * timezone. Word-for-word copies vote on that offset; the longest bodies carry
+ * the most weight, and the winner then dates the copies too short to prove it. */
+function votedOffsets(messages: ParsedMessage[]): number[] {
+  const groups = new Map<string, ParsedMessage[]>();
+  for (const message of messages) {
+    const body = coreOf(message);
+    if (body.length < EXACT_ENOUGH) continue;
+    const group = groups.get(body);
+    if (group) group.push(message); else groups.set(body, [message]);
+  }
+  const votes = new Map<number, { pairs: number; weight: number }>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    for (let i = 0; i < group.length; i++) for (let j = i + 1; j < group.length; j++) {
+      const a = group[i], b = group[j];
+      if (a.source !== 'quoted' && b.source !== 'quoted') continue;
+      if (!sameAuthor(a, b) || imagesConflict(a, b) || !zoneShifted(a, b)) continue;
+      const offset = zoneOffset(a, b);
+      if (offset === undefined) continue;
+      // Attributions omit seconds, so bank the quarter hour a real offset uses.
+      const quarter = Math.round(offset / 900000) * 900000;
+      const vote = votes.get(quarter) ?? { pairs: 0, weight: 0 };
+      votes.set(quarter, { pairs: vote.pairs + 1, weight: vote.weight + coreOf(a).length });
+    }
+  }
+  // No pair may confirm the offset that would justify merging itself: an offset
+  // counts once two separate copies agree on it, or one long body proves it.
+  const corroborated = Array.from(votes).filter(([, vote]) => vote.pairs > 1 || vote.weight >= LONG_ENOUGH);
+  const best = Math.max(0, ...corroborated.map(([, vote]) => vote.weight));
+  return best ? corroborated.filter(([, vote]) => vote.weight === best).map(([offset]) => offset) : [];
+}
+
 function reconcile(messages: ParsedMessage[], offsets: number[]) {
   const result: ParsedMessage[] = [];
   const observed: number[] = [];
+  // Where each input copy ended up, so quote-nesting evidence gathered before
+  // reconciliation still names the surviving message afterwards.
+  const place = new Map<ParsedMessage, number>();
   const ordered = [...messages].sort((a, b) => Number(a.source === 'quoted') - Number(b.source === 'quoted'));
   for (const msg of ordered) {
     const sameId = result.findIndex(old => old.id === msg.id);
-    if (sameId >= 0) { result[sameId] = combine(result[sameId], msg); continue; }
+    if (sameId >= 0) { place.set(msg, sameId); result[sameId] = combine(result[sameId], msg); continue; }
     const candidates = result.map((old, i) => match(old, msg, offsets) ? i : -1).filter(i => i >= 0);
-    // Ambiguous copies (e.g. two real identical approvals) must not erase history.
-    if (candidates.length !== 1) { result.push({ ...msg }); continue; }
-    const target = result[candidates[0]];
+    let chosen = candidates.length === 1 ? candidates[0] : -1;
+    if (candidates.length > 1) {
+      // A copy belongs to the message whose gap is this thread's own offset;
+      // the same wording sent twice reads as a plain-clock or foreign gap.
+      const preferred = candidates.filter(i => {
+        const offset = pairOffset(result[i], msg);
+        return offset === 0 || (offset !== undefined && offsets.some(known => Math.abs(known - offset) < 60000));
+      });
+      // Copies that stay ambiguous (two real identical approvals) keep history.
+      if (preferred.length === 1) chosen = preferred[0];
+    }
+    if (chosen < 0) { place.set(msg, result.length); result.push({ ...msg }); continue; }
+    place.set(msg, chosen);
+    const target = result[chosen];
     const offset = zoneShifted(target, msg) ? zoneOffset(target, msg) : undefined;
     // Only a long copy is strong enough to teach this conversation an offset.
-    if (offset !== undefined && Math.min(core(target.body).length, core(msg.body).length) >= LONG_ENOUGH) observed.push(offset);
-    result[candidates[0]] = combine(target, msg);
+    if (offset !== undefined && Math.min(coreOf(target).length, coreOf(msg).length) >= LONG_ENOUGH) observed.push(offset);
+    result[chosen] = combine(target, msg);
   }
-  return { result: result.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)), observed };
+  return { result, observed, place };
+}
+
+/** A clock the provider never spelled out, such as a collapsed row labelled
+ * "10:32", must not drift to the end of the thread. The mailbox order around
+ * it is authoritative, so the missing time is placed between its neighbours. */
+function placeUnread(messages: ParsedMessage[]): ParsedMessage[] {
+  const direct = messages.filter(message => message.source !== 'quoted').sort((a, b) => a.index - b.index);
+  const times = direct.map(message => anchoredTime(message) ? Date.parse(message.timestamp) : NaN);
+  if (!times.some(Number.isFinite) || times.every(Number.isFinite)) return messages;
+  const placed = new Map<ParsedMessage, string>();
+  for (let i = 0; i < direct.length; i++) {
+    if (Number.isFinite(times[i])) continue;
+    let before = i - 1, after = i + 1;
+    while (before >= 0 && !Number.isFinite(times[before])) before--;
+    while (after < times.length && !Number.isFinite(times[after])) after++;
+    const low = before >= 0 ? times[before] : undefined, high = after < times.length ? times[after] : undefined;
+    const time = low !== undefined && high !== undefined ? low + ((high - low) * (i - before)) / (after - before)
+      : low !== undefined ? low + (i - before) * 1000
+      : high! - (after - i) * 1000;
+    placed.set(direct[i], new Date(time).toISOString());
+  }
+  // The time stays flagged as an estimate; only the position is now known.
+  return messages.map(message => placed.has(message) ? { ...message, timestamp: placed.get(message)!, timestampEstimated: true } : message);
+}
+/** Oldest first, with the mailbox's own order settling equal or unreadable clocks. */
+function chronological(a: ParsedMessage, b: ParsedMessage): number {
+  const left = Date.parse(a.timestamp), right = Date.parse(b.timestamp);
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return (Number.isFinite(left) ? 0 : 1) - (Number.isFinite(right) ? 0 : 1) || a.index - b.index;
+  return left - right || a.index - b.index;
+}
+/** A quoting client nests the message it answers inside its own, so the quote
+ * links record the reply order first-hand. That evidence outranks the clocks:
+ * an attribution is stamped in the quoting author's timezone, which it never
+ * writes down, so correspondents an offset apart read out of order — a reply
+ * at 09:04 appearing to precede the 13:28 message it answers. Each link is
+ * read after reconciliation so copies from separate emails constrain the one
+ * message they were merged into. */
+function chainEdges(messages: ParsedMessage[], place: Map<ParsedMessage, number>): [number, number][] {
+  const byId = new Map<string, number>();
+  for (const message of messages) byId.set(message.id, place.get(message)!);
+  const edges: [number, number][] = [];
+  for (const message of messages) {
+    const quoter = message.quotedBy === undefined ? undefined : byId.get(message.quotedBy);
+    if (quoter !== undefined) edges.push([place.get(message)!, quoter]);
+  }
+  return edges;
+}
+/** Chronological, but never contradicting the quote nesting: of the messages
+ * whose predecessors are already placed, the earliest clock goes next. A thread
+ * that quotes nothing therefore keeps exactly the plain chronological order. */
+function sequence(messages: ParsedMessage[], edges: [number, number][]): ParsedMessage[] {
+  const order = messages.map((_, i) => i).sort((a, b) => chronological(messages[a], messages[b]) || a - b);
+  const blocking = messages.map(() => 0);
+  const unlocks = messages.map((): number[] => []);
+  for (const [older, newer] of edges) {
+    if (older === newer || unlocks[older].includes(newer)) continue;
+    unlocks[older].push(newer); blocking[newer]++;
+  }
+  const sorted: ParsedMessage[] = [];
+  while (order.length) {
+    // Copies wrongly collapsed into one message could leave a cycle with no
+    // free message; the clock then settles it rather than stalling the thread.
+    const at = Math.max(0, order.findIndex(i => blocking[i] === 0));
+    const [next] = order.splice(at, 1);
+    for (const later of unlocks[next]) blocking[later]--;
+    sorted.push(messages[next]);
+  }
+  // Where the nesting overruled the clocks, say so on both messages: their
+  // times were read in timezones that differ, and the reader can see it.
+  let latest = -Infinity, latestAt = -1;
+  for (let i = 0; i < sorted.length; i++) {
+    const time = Date.parse(sorted[i].timestamp);
+    if (!Number.isFinite(time)) continue;
+    if (time < latest) {
+      sorted[i] = { ...sorted[i], orderedByQuote: true };
+      sorted[latestAt] = { ...sorted[latestAt], orderedByQuote: true };
+    } else { latest = time; latestAt = i; }
+  }
+  return sorted;
 }
 
 export function mergeMessages(messages: ParsedMessage[]): ParsedMessage[] {
-  const strict = reconcile(messages, []);
-  // A quoting client's timezone is the same for every message it quoted, so an
-  // offset proven by a long duplicate also resolves the shorter ones.
-  return strict.observed.length ? reconcile(messages, strict.observed).result : strict.result;
+  const voted = votedOffsets(messages);
+  const first = reconcile(messages, voted);
+  // An offset proven by a long duplicate also resolves the shorter copies.
+  const merged = first.observed.length ? reconcile(messages, [...voted, ...first.observed]) : first;
+  return sequence(placeUnread(merged.result), chainEdges(messages, merged.place));
 }
 
 export function participationBoundary(messages: ParsedMessage[], currentUserEmail = ''): ThreadData['participation'] {

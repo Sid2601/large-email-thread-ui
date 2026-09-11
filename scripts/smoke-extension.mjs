@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
+import sharp from 'sharp';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const profile = await mkdtemp(join(tmpdir(), 'threadlens-smoke-'));
 const extension = resolve('dist');
@@ -15,6 +16,7 @@ try {
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
   const id = new URL(worker.url()).host;
   const errors = [];
+  const imageBytes = await sharp(Buffer.from('<svg width="960" height="300" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="300" fill="#e0f2fe"/><text x="40" y="70" font-size="32">Warehouse transfer analysis</text><rect x="40" y="110" width="400" height="40" fill="#0284c7"/><rect x="40" y="180" width="700" height="40" fill="#0d9488"/><text x="40" y="270" font-size="22">Synthetic image fixture · 960 × 300</text></svg>')).png().toBuffer();
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const attribution = (name, when, body) => `<div class="gmail_attr">On ${when} <a href="mailto:${name.toLowerCase()}@example.com">${name}</a> wrote:</div><blockquote class="gmail_quote">${body}</blockquote>`;
   const quote = (name, date, body) => attribution(name, `${date} at 10:00 AM UTC`, body);
@@ -27,6 +29,7 @@ try {
   const history = quote('Alice', 'Sep 7, 2026', '<p>Budget approved.</p><table><tr><th>Item</th><th>Budget</th></tr><tr><td>Hosting</td><td>$500</td></tr></table>' + quote('Bob', 'Sep 6, 2026', '<p>Initial proposal.</p>'));
   const html = `<main role="main"><span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Enterprise rollout · joined midway</h2><div data-message-id="direct-1"><span class="gD" email="carol@example.com" name="Carol">Carol</span><span class="g2" email="new@example.com"></span><span class="g3" data-tooltip="Sep 8, 10:00 AM UTC"></span><div class="a3s aiL">${carolBody}<div hidden style="display:none">${history}</div></div><div class="aZo" data-tooltip="report.txt"><span class="aV3">report.txt</span><span class="aV7">12 B</span><a href="https://mail.google.com/mail/u/0/?view=att&amp;attid=1">Download</a></div></div><div data-message-id="direct-2"><span class="gD" email="dave@example.com" name="Dave">Dave</span><span class="g3" data-tooltip="2026-09-09T10:00:00Z"></span><div class="a3s aiL"><p>OK</p>${attribution('Carol', localClock(carolSentAt - 4.5 * 3600 * 1000), carolBody + history)}</div></div></main>`;
   await context.route('https://mail.google.com/**', route => route.fulfill(route.request().url().includes('view=att') ? { contentType: 'text/plain', body: 'Report data' } : { contentType: 'text/html; charset=utf-8', body: html }));
+  await context.route('https://mail.google.com/inline-test.png', route => route.fulfill({ contentType: 'image/png', body: imageBytes }));
   const mail = await context.newPage();
   await mail.goto('https://mail.google.com/mail/u/0/#inbox/testthread123456');
   await new Promise(resolve => setTimeout(resolve, 1500));
@@ -112,6 +115,58 @@ try {
   await panel.getByText('Forward only', { exact: true }).waitFor();
   await panel.getByText('This email contains only quoted history, shown separately above.', { exact: true }).waitFor();
   await panel.getByText('You joined here · first visible inclusion', { exact: true }).waitFor();
+  // Images retain their author and placement; source-tab blob URLs are resolved
+  // only when visible, and both sources become offline bytes on export.
+  await mail.evaluate(base64 => {
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const blob = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+    document.querySelector('main').innerHTML = `<h2 class="hP">Inline image verification</h2><div data-message-id="image-message"><span class="gD" email="lee@example.com" name="Lee">Lee</span><span class="g3" data-tooltip="2026-09-09T10:00:00Z"></span><div class="a3s aiL"><p>Before the current image.</p><img src="${blob}" alt="Current chart"><p>After the current image.</p><div class="gmail_attr">On Sep 8, 2026 at 10:00 AM UTC <a href="mailto:alex@example.com">Alex</a> wrote:</div><blockquote class="gmail_quote"><p>Original image below.</p><img src="https://mail.google.com/inline-test.png" alt="Original chart"></blockquote></div></div>`;
+    location.hash = '#inbox/images123456';
+  }, imageBytes.toString('base64'));
+  await panel.getByText('Inline image verification', { exact: true }).waitFor();
+  await panel.getByText('2 messages', { exact: true }).waitFor();
+  for (const alt of ['Original chart', 'Current chart']) {
+    const img = panel.getByRole('button', { name: `View image: ${alt}` });
+    await img.scrollIntoViewIfNeeded();
+    try {
+      await panel.waitForFunction(alt => Array.from(document.images).some(img => img.alt === alt && img.naturalWidth === 960), alt);
+    } catch (error) {
+      console.error('Image failure', alt, await panel.locator('.email-body').evaluateAll(els => els.map(el => el.innerHTML)), panelLogs);
+      await panel.screenshot({ path: 'artifacts/image-failure.png', fullPage: true });
+      throw error;
+    }
+    await img.click();
+    await panel.getByRole('dialog', { name: 'Full-size image' }).waitFor();
+    await panel.getByRole('button', { name: 'Close image' }).click();
+  }
+  const beforeStats = await worker.evaluate(tabId => chrome.tabs.sendMessage(tabId, { type: 'READER_STATS' }), mailTabId);
+  await mail.locator('.a3s > p').first().evaluate(el => { el.textContent = 'Updated text before the current image.'; });
+  await panel.getByText('Updated text before the current image.', { exact: true }).waitFor();
+  const afterStats = await worker.evaluate(tabId => chrome.tabs.sendMessage(tabId, { type: 'READER_STATS' }), mailTabId);
+  assert.equal(afterStats.snapshots - beforeStats.snapshots, 1, 'editing one body snapshots only that message');
+  await mail.locator('.a3s').evaluate(el => {
+    const replacement = el.cloneNode(true);
+    replacement.querySelector('p').textContent = 'Replacement body keeps both images.';
+    el.replaceWith(replacement);
+  });
+  await panel.getByText('Replacement body keeps both images.', { exact: true }).waitFor();
+  await panel.screenshot({ path: 'artifacts/inline-images.png', fullPage: true });
+  const [imageDownload] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name: 'Download conversation (.html)' }).click()]);
+  const imageExportPath = resolve('artifacts/inline-images.html');
+  await imageDownload.saveAs(imageExportPath);
+  const imageExport = await readFile(imageExportPath, 'utf8');
+  assert.equal((imageExport.match(/src="data:image\/png;base64,/g) || []).length, 2);
+  assert.ok(!imageExport.includes('Image not embedded'));
+  const offlineImages = await context.newPage();
+  await offlineImages.route('https://**/*', route => route.abort());
+  await offlineImages.goto(pathToFileURL(imageExportPath).href);
+  for (const alt of ['Original chart', 'Current chart']) {
+    await offlineImages.getByAltText(alt).scrollIntoViewIfNeeded();
+    await offlineImages.waitForFunction(alt => Array.from(document.images).some(img => img.alt === alt && img.naturalWidth === 960), alt);
+  }
+  await offlineImages.screenshot({ path: 'artifacts/inline-images-export.png', fullPage: true });
+  await offlineImages.close();
+  await worker.evaluate(tabId => chrome.tabs.update(tabId, { active: true }), mailTabId);
   // Inbox navigation must clear mail rather than leaving stale content visible.
   await mail.evaluate(() => { location.hash = '#inbox'; });
   await panel.getByText('2 messages', { exact: true }).waitFor({ state: 'detached' });
@@ -123,5 +178,5 @@ try {
   await exportedPage.screenshot({ path: 'artifacts/conversation-export.png', fullPage: true });
   assert.deepEqual(errors, []);
   assert.ok(!panelLogs.some(text => text.includes('cross-world extension resource mismatch')), 'no cross-world preload warnings');
-  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone full-conversation export during search, table, rich search, local file save/reload/download/remove, navigation clearing; no page errors or cross-world preload warnings.');
+  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone full-conversation export during search, table, rich search, local file save/reload/download/remove, HTTPS/blob inline images, full-size viewer, offline embedded images, incremental body updates/replacement, navigation clearing; no page errors or cross-world preload warnings.');
 } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }

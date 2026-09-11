@@ -2,7 +2,7 @@ import { sanitizeEmailHtml } from '../../content/scraper-utils';
 
 /** Highlight text nodes only so searching never destroys tables or links. */
 export function highlightedEmailHtml(html: string, query: string): string {
-  const root = document.createElement('div');
+  const root = new DOMParser().parseFromString('', 'text/html').createElement('div');
   root.innerHTML = sanitizeEmailHtml(html);
   if (!query.trim()) return root.innerHTML;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
