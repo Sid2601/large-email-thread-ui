@@ -17,7 +17,7 @@ if (flags.length > 1 || flags.some(flag => !['--dev', '--prod'].includes(flag)))
   process.exit(1);
 }
 const channel = flags[0] === '--dev' ? 'dev' : 'prod';
-console.log(`Preparing ${channel === 'dev' ? 'development (downloads enabled)' : 'production (downloads disabled)'} package.`);
+console.log(`Preparing ${channel === 'dev' ? 'development (conversation exports enabled)' : 'production (attachments enabled; conversation exports disabled)'} package.`);
 const steps = [
   ['Typecheck', 'npm', ['run', '--silent', 'typecheck']],
   ['Tests', 'npm', ['run', '--silent', 'test']],

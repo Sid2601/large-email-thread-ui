@@ -3,7 +3,7 @@ import type { ThreadData } from '../../types';
 import { downloadConversation } from '../export/conversation';
 import { downloadThreadSource } from '../export/capture';
 
-/** Mounted only in the development build; all download code is removed from production. */
+/** Mounted only in the development build; conversation export code is removed from production. */
 export function DevDownloads({ threadData }: { threadData: ThreadData }) {
   const [exporting, setExporting] = useState<'' | 'light' | 'masked' | 'source-masked' | 'source-original'>('');
   const [exportError, setExportError] = useState('');

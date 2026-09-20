@@ -59,13 +59,13 @@ for (const channel of ['prod', 'dev']) {
     for (const name of ['Read collapsed emails', 'Collapse emails again'])
       assert.equal(await panel.getByRole('button', { name, exact: true }).count(), 1);
 
+    async function download(name) {
+      const [file] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name }).click()]);
+      const path = join(output, file.suggestedFilename());
+      await file.saveAs(path);
+      return readFile(path, 'utf8');
+    }
     if (isDev) {
-      async function download(name) {
-        const [file] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name }).click()]);
-        const path = join(output, file.suggestedFilename());
-        await file.saveAs(path);
-        return readFile(path, 'utf8');
-      }
       const text = await download('Text only (no images)');
       assert.ok(text.includes('Warehouse') && !text.includes('<img'));
       const masked = await download('Masked copy (share-safe)');
@@ -78,24 +78,30 @@ for (const channel of ['prod', 'dev']) {
         assert.equal(capture.fidelity.sameStructure, true);
       }
       await panel.getByText('Report a parsing problem', { exact: true }).click();
-      await panel.getByRole('button', { name: 'Save locally', exact: true }).click();
-      await panel.getByText('Saved on this device', { exact: true }).waitFor();
-      await panel.reload();
-      await panel.getByText('Saved on this device', { exact: true }).waitFor();
-      assert.equal(await download('Download saved file'), 'Report data');
-      await panel.getByRole('button', { name: 'Remove local copy', exact: true }).click();
-      await panel.getByRole('button', { name: 'Choose downloaded file', exact: true }).waitFor();
     } else {
       const controls = await panel.locator('button, a, summary, input[type="file"]').allTextContents();
-      assert.ok(controls.every(text => !/download|save locally|text only|masked copy|thread source|report a parsing problem|open in email/i.test(text)), controls.join('\n'));
-      assert.equal(await panel.locator('input[type="file"], a[download]').count(), 0);
-      assert.deepEqual(await panel.evaluate(async () => (await indexedDB.databases()).map(db => db.name)), [], 'production does not open attachment storage');
+      assert.ok(controls.every(text => !/download conversation|text only|masked copy|thread source|report a parsing problem/i.test(text)), controls.join('\n'));
       const capture = await worker.evaluate(async tabId => {
         try { return await chrome.tabs.sendMessage(tabId, { type: 'CAPTURE_THREAD_SOURCE' }); }
         catch { return null; }
       }, tabId);
       assert.ok(!capture, 'production content script does not provide diagnostic captures');
     }
+    // Attachments are ordinary email functionality in BOTH packages.
+    assert.match(await panel.getByRole('link', { name: 'Open in email', exact: true }).getAttribute('href'), /view=att/);
+    await panel.getByRole('button', { name: 'Save locally', exact: true }).click();
+    await panel.getByText('Saved on this device', { exact: true }).waitFor();
+    await panel.reload();
+    await panel.getByText('Saved on this device', { exact: true }).waitFor();
+    assert.equal(await download('Download saved file'), 'Report data');
+    await panel.getByRole('button', { name: 'Remove local copy', exact: true }).click();
+    await panel.getByRole('button', { name: 'Choose downloaded file', exact: true }).waitFor();
+    await panel.locator('input[type="file"]').setInputFiles({ name: 'report.txt', mimeType: 'text/plain', buffer: Buffer.from('Manually imported report') });
+    await panel.getByText('Saved on this device', { exact: true }).waitFor();
+    assert.equal(await download('Download saved file'), 'Manually imported report');
+    await panel.getByRole('button', { name: 'Remove local copy', exact: true }).click();
+    await panel.getByRole('button', { name: 'Choose downloaded file', exact: true }).waitFor();
+    if (!isDev) assert.equal(await panel.getByRole('button', { name: /Text only|Masked copy|Thread source|Download conversation/ }).count(), 0);
     await panel.screenshot({ path: join(output, `${channel}.png`), fullPage: true });
     // The mail controls remain functional even without export state in App.
     await mail.evaluate(() => document.querySelector('.gE').onclick = () => document.querySelector('.a3s')?.remove());
@@ -103,7 +109,7 @@ for (const channel of ['prod', 'dev']) {
     await mail.waitForFunction(() => !document.querySelector('.a3s'));
     await panel.getByText('2 messages', { exact: true }).waitFor();
     assert.deepEqual(errors, []);
-    results.push({ channel, version, messages: 2, downloadsEnabled: isDev, imagesTablesSearchAndMailControls: 'passed', pageErrors: 0 });
+    results.push({ channel, version, messages: 2, conversationExportsEnabled: isDev, attachmentsSaveImportDownload: 'passed', imagesTablesSearchAndMailControls: 'passed', pageErrors: 0 });
   } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }
 }
 await writeFile(join(output, 'verification.json'), JSON.stringify(results, null, 2) + '\n');
