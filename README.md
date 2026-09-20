@@ -2,6 +2,8 @@
 
 A local Chrome extension that displays long Gmail and Outlook email conversations as chronological chat messages. Included quoted history is split into individual messages, including when you join a conversation midway.
 
+**New to the codebase?** [`architecture/`](architecture/README.md) holds the engineering reference: seven diagrams and ten documents covering every algorithm behind every shipped feature — extraction, message splitting, reconciliation and ordering, images, attachments, the UI, exports and masking, security, and the release gate.
+
 ## Load the ready-built extension
 
 1. Open `chrome://extensions` in Chrome.
