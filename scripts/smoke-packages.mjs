@@ -27,11 +27,21 @@ for (const channel of ['prod', 'dev']) {
     context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     await context.route('https://mail.google.com/**', route => route.fulfill(
-      route.request().url().endsWith('/test-chart.png') ? { contentType: 'image/png', body: png }
+      route.request().url().endsWith('/blocked.png') ? (route.request().resourceType() === 'image' ? { contentType: 'image/png', body: png, headers: { 'cache-control': 'no-store' } } : { status: 403, body: 'Unavailable' })
+        : route.request().url().endsWith('/test-chart.png') ? { contentType: 'image/png', body: png }
         : route.request().url().includes('view=att') ? { contentType: 'text/plain', body: 'Report data' }
           : { contentType: 'text/html', body: html }));
     const mail = await context.newPage();
     await mail.goto('https://mail.google.com/mail/u/0/#inbox/packagecheck123456');
+    await mail.evaluate(base64 => {
+      const data = `data:image/png;base64,${base64}`;
+      const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+      const blob = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+      for (const [alt, src] of [['Blob chart', blob], ['Embedded chart', data], ['Restricted chart', 'https://mail.google.com/blocked.png']]) {
+        const img = document.createElement('img'); img.alt = alt; img.src = src;
+        document.querySelector('.a3s').append(img);
+      }
+    }, png.toString('base64'));
     let entry;
     for (let attempt = 0; attempt < 100; attempt++) {
       entry = await worker.evaluate(async () => Object.entries(await chrome.storage.session.get(null)).find(([key]) => key.startsWith('thread:')));
@@ -51,11 +61,33 @@ for (const channel of ['prod', 'dev']) {
     await panel.locator('input[type="text"], input[type="search"]').fill('Warehouse');
     assert.equal(await panel.locator('table mark').innerText(), 'Warehouse');
     await panel.locator('input[type="text"], input[type="search"]').fill('');
-    await panel.getByRole('button', { name: 'View image: Balance chart' }).scrollIntoViewIfNeeded();
-    await panel.waitForFunction(() => Array.from(document.images).some(img => img.alt === 'Balance chart' && img.naturalWidth === 80));
-    await panel.getByRole('button', { name: 'View image: Balance chart' }).click();
-    await panel.getByRole('dialog', { name: 'Full-size image' }).waitFor();
-    await panel.getByRole('button', { name: 'Close image' }).click();
+    await panel.getByRole('button', { name: 'View image: Blob chart' }).waitFor();
+    for (const alt of ['Balance chart', 'Blob chart', 'Embedded chart', 'Restricted chart']) {
+      await panel.getByRole('button', { name: `View image: ${alt}` }).scrollIntoViewIfNeeded();
+      await panel.waitForFunction(alt => Array.from(document.images).some(img => img.alt === alt && img.naturalWidth === 80), alt);
+      await panel.getByRole('button', { name: `View image: ${alt}` }).click();
+      const viewer = panel.getByRole('dialog', { name: 'Full-size image' });
+      await viewer.waitFor();
+      const download = viewer.getByRole('button', { name: 'Download image', exact: true });
+      const close = viewer.getByRole('button', { name: 'Close image', exact: true });
+      const positions = await Promise.all([download.boundingBox(), close.boundingBox()]);
+      assert.ok(Math.abs(positions[0].y - positions[1].y) < 2, 'image controls share one row');
+      if (alt === 'Restricted chart') {
+        await download.click();
+        await viewer.getByRole('alert').waitFor();
+        assert.match(await viewer.getByRole('alert').innerText(), /Could not download image/);
+        assert.equal(await download.isEnabled(), true, 'a failed download can be retried');
+      } else {
+        const [file] = await Promise.all([panel.waitForEvent('download'), download.click()]);
+        assert.ok(file.suggestedFilename().endsWith('.png'));
+        const path = join(output, `${channel}-${alt}.png`);
+        await file.saveAs(path);
+        assert.deepEqual(await readFile(path), png, 'download keeps the original image bytes');
+        assert.equal(await viewer.isVisible(), true, 'downloading keeps the image open');
+        if (alt === 'Balance chart') await panel.screenshot({ path: join(output, `${channel}-image-viewer.png`), fullPage: true });
+      }
+      await close.click();
+    }
     for (const name of ['Read collapsed emails', 'Collapse emails again'])
       assert.equal(await panel.getByRole('button', { name, exact: true }).count(), 1);
 
@@ -109,7 +141,7 @@ for (const channel of ['prod', 'dev']) {
     await mail.waitForFunction(() => !document.querySelector('.a3s'));
     await panel.getByText('2 messages', { exact: true }).waitFor();
     assert.deepEqual(errors, []);
-    results.push({ channel, version, messages: 2, conversationExportsEnabled: isDev, attachmentsSaveImportDownload: 'passed', imagesTablesSearchAndMailControls: 'passed', pageErrors: 0 });
+    results.push({ channel, version, messages: 2, conversationExportsEnabled: isDev, attachmentsSaveImportDownload: 'passed', imageDownloadsHttpsBlobDataAndFailure: 'passed', imagesTablesSearchAndMailControls: 'passed', pageErrors: 0 });
   } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }
 }
 await writeFile(join(output, 'verification.json'), JSON.stringify(results, null, 2) + '\n');

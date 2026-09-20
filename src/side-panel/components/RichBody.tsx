@@ -2,12 +2,25 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { highlightedEmailHtml } from './email-markup';
 import { loadInlineImage } from '../media/images';
+import { downloadInlineImage } from '../media/download-image';
 
-function ImageViewer({ src, alt, close }: { src: string; alt: string; close: () => void }) {
+function ImageViewer({ src, alt, tabId, close }: { src: string; alt: string; tabId?: number; close: () => void }) {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState('');
+  async function download() {
+    setDownloading(true); setError('');
+    try { await downloadInlineImage(src, alt, tabId); }
+    catch (error) { setError(error instanceof Error ? `Could not download image. ${error.message}` : 'Could not download image. Please try again.'); }
+    finally { setDownloading(false); }
+  }
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { dialog.current?.showModal(); }, []);
   return createPortal(<dialog ref={dialog} className="image-viewer" onClose={close} aria-label="Full-size image">
-    <button onClick={() => dialog.current?.close()} className="image-close">Close image</button>
+    <div className="image-actions">
+      <button type="button" onClick={() => dialog.current?.close()}>Close image</button>
+      <button type="button" onClick={() => void download()} disabled={downloading} aria-busy={downloading}>{downloading ? 'Downloading…' : 'Download image'}</button>
+    </div>
+    {error && <p role="alert" className="image-error">{error}</p>}
     <div className="image-original"><img src={src} alt={alt} /></div>
   </dialog>, document.body);
 }
@@ -51,5 +64,5 @@ export const RichBody = memo(function RichBody({ html, query = '', tabId }: { ht
     });
     return () => { alive = false; observer.disconnect(); handlers.forEach(cleanup => cleanup()); };
   }, [markup, tabId]);
-  return <><div ref={root} className="text-sm email-body" dangerouslySetInnerHTML={{ __html: markup }} />{expanded && <ImageViewer {...expanded} close={() => setExpanded(null)} />}</>;
+  return <><div ref={root} className="text-sm email-body" dangerouslySetInnerHTML={{ __html: markup }} />{expanded && <ImageViewer {...expanded} tabId={tabId} close={() => setExpanded(null)} />}</>;
 });

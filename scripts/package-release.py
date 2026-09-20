@@ -41,8 +41,8 @@ for control in dev_controls:
     assert (control in code) == args.dev, f'{channel} build has incorrect developer control: {control}'
 
 # Attachment access is a user feature in both flavors, not a diagnostic export.
-for control in ['Open in email', 'Download saved file', 'Save locally', 'Choose downloaded file', 'Remove local copy']:
-    assert control in code, f'{channel} build is missing attachment control: {control}'
+for control in ['Open in email', 'Download saved file', 'Save locally', 'Choose downloaded file', 'Remove local copy', 'Download image']:
+    assert control in code, f'{channel} build is missing file/image control: {control}'
 
 output.mkdir(exist_ok=True)
 name = f'threadlens-{version}-{channel}'
