@@ -22,6 +22,8 @@ dist-dev/
 # Keep project reference documents under version control.
 !README.md
 !CONTEXT.md
+# The architecture reference is part of the product, not local runner state.
+!architecture/**/*.md
 
 # Generated local distribution archive
 releases/
