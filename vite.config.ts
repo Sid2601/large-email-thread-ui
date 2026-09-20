@@ -5,7 +5,7 @@ import manifestBase from './manifest.json'
 import pkg from './package.json'
 
 export default defineConfig(({ mode }) => {
-  // Only this explicit mode includes file downloads and diagnostics. Vite's
+  // Only this explicit mode includes conversation exports and diagnostics. Vite's
   // import.meta.env.DEV is false for both optimized release builds.
   const devTools = mode === 'development';
   const manifest = {

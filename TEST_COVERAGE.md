@@ -1,10 +1,10 @@
 # Enterprise conversation test coverage
 
-Release 1.7.3. **243 passing automated tests**, one optional capture-file test skipped without an input file, plus Chromium checks for both packages and the development extension. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
+Release 1.7.4. **251 passing automated tests**, one optional capture-file test skipped without an input file, plus Chromium checks for both packages and the development extension. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
 
 | Area | Cases covered |
 |---|---|
-| Build flavors | Production omits all export, diagnostic and attachment download/save/import controls and the capture endpoint; no attachment database is opened. Dev retains text/masked exports, both source captures and attachment persistence/download/removal. Both packaged builds retain images, tables, search, participation and Gmail controls. Packager checks emitted code and distinct names/paths. |
+| Build flavors | Production omits conversation exports, diagnostics and the capture endpoint. Dev retains text/masked conversation exports and both source captures. Both builds provide attachment provider links, local saving, persistence across reload, downloading/removal and manual file import followed by download. Both packaged builds retain images, tables, search, participation and Gmail controls. Packager checks emitted code and distinct names/paths. |
 | Standard replies | Gmail nested attribution, Outlook From/Sent/To/Subject, plain On/wrote text, Apple/mobile comma attribution, wrapped attribution, single messages, ordinary blockquotes, short replies |
 | Joining midway | 40 messages recovered from one nested chain; 40 unique messages recovered from the last five direct emails; earlier quoted history retained after direct expansion |
 | Forwarding | Forward with an introduction, pure forward, nested Outlook inside forward, mixed Gmail/Outlook, independent sibling forwards, new recipient later replying in the same conversation |
@@ -23,6 +23,7 @@ Release 1.7.3. **243 passing automated tests**, one optional capture-file test s
 | Reply order across timezones | Quote nesting placing correspondents whose zoneless clocks read out of order, the contradicting pair marked in the panel and the export, the carrier kept after everything it quotes, chains of two separate emails joined through a shared message, sibling forwards left to their clocks, order stable across repeated merges and cache rescans |
 | Duplicate copies | Twenty-email thread with unanswered follow-ups reduced to one entry per message, identical follow-ups assigned to the right message, name-only attributions matched, placeholder names kept apart, re-addressed inline pictures merged, differing pictures kept apart, offset confirmed by two agreeing copies |
 | No-images exports | Every image replaced by a filename, source URLs and image bytes absent, source-derived and generated names, alt text kept, image-free threads unchanged, filename suffix |
+| Image download | Both packaged builds download HTTPS, source-tab blob and embedded data images from the viewer with exact byte preservation; Download image and Close image share a row; unavailable retrieval shows an error with retry/close available. Eight unit cases cover names, MIME extensions, unsafe filename characters, preserved bytes and access/payload failures. |
 | Inline images | Image-only, leading/trailing, between paragraphs, table-cell and quoted images; author ownership; live source overrides; blob references; unsafe/cid rejection; removed-image captions; differing images kept separate; export embedding/failure notices; raster/size checks |
 | Browser image flow | HTTPS and source-tab blob images render at full natural dimensions; full-size dialog; offline HTML embeds both sources; updates/replaced body nodes retain pictures |
 | Collapsing the mailbox | Only expanded emails clicked, Gmail's own Collapse all control preferred, the request reaching the adapter without re-reading the page or losing recovered messages |

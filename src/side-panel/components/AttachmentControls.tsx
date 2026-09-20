@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Attachment } from '../../types';
 import { attachmentUrl, fetchAttachment, savedAttachment, saveAttachment, removeAttachment } from '../storage/attachments';
 
-export function DevAttachmentControls({ attachment, messageId }: { attachment: Attachment; messageId: string }) {
+export function AttachmentControls({ attachment, messageId }: { attachment: Attachment; messageId: string }) {
   const key = `${messageId}:${attachment.name}:${attachment.sizeLabel}`;
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);

@@ -36,10 +36,13 @@ assert 'modulepreload' not in (dist / manifest['side_panel']['default_path']).re
 code = '\n'.join(p.read_text() for p in dist.rglob('*.js'))
 dev_controls = ['Text only (no images)', 'Masked copy (share-safe)',
                 'Thread source (masked)', 'Thread source (original, private)',
-                'Download saved file', 'Save locally', 'Choose downloaded file',
                 'CAPTURE_THREAD_SOURCE']
 for control in dev_controls:
     assert (control in code) == args.dev, f'{channel} build has incorrect developer control: {control}'
+
+# Attachment access is a user feature in both flavors, not a diagnostic export.
+for control in ['Open in email', 'Download saved file', 'Save locally', 'Choose downloaded file', 'Remove local copy', 'Download image']:
+    assert control in code, f'{channel} build is missing file/image control: {control}'
 
 output.mkdir(exist_ok=True)
 name = f'threadlens-{version}-{channel}'
@@ -50,9 +53,9 @@ flavor_note = (
     'and local attachment save/import/download controls are enabled. '
     'Original diagnostic files contain email content; use the masked copy when reporting a problem.'
     if args.dev else
-    'Production package. Conversation exports, diagnostic capture downloads and attachment '
-    'save/import/download controls are not included. Attachment names and sizes are displayed; '
-    'use the original email application to retrieve files. Inline images remain visible.'
+    'Production package. Entire-conversation exports and diagnostic capture downloads are not included. '
+    'Attachment links, local saving, manual import and saved-file downloads are available. '
+    'Inline images remain visible.'
 )
 install = f'''ThreadLens {version} ({channel})
 

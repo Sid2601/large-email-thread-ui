@@ -1,4 +1,4 @@
-# ThreadLens 1.7.3
+# ThreadLens 1.7.4
 
 A local Chrome extension that displays long Gmail and Outlook email conversations as chronological chat messages. Included quoted history is split into individual messages, including when you join a conversation midway.
 
@@ -10,18 +10,18 @@ A local Chrome extension that displays long Gmail and Outlook email conversation
 4. If ThreadLens is already loaded from that directory, click **Reload** on its extension card.
 5. Refresh your Gmail/Outlook tab, open an email conversation, then click the ThreadLens toolbar icon.
 
-The ZIP in `releases/threadlens-1.7.3-prod.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
+The ZIP in `releases/threadlens-1.7.4-prod.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
 
-## Development and production packages in 1.7.3
+## Development and production packages in 1.7.4
 
-The production extension contains no conversation exports, diagnostic capture downloads, attachment download links, or local attachment save/import controls. Attachment names/sizes, inline image viewing, tables, search, participants, history recovery and Gmail expand/collapse controls remain available. Retrieve attachment files in the original email application.
+The production extension omits only the entire-conversation exports and diagnostic capture downloads used for testing. **Attachment links, local saving, manual import, saved-file downloads and inline-image downloads are available in both production and Dev.** Inline image viewing, tables, search, participants, history recovery and Gmail expand/collapse controls remain available.
 
-The **ThreadLens Dev** package keeps the testing downloads from 1.7.2: text-only and masked conversations, masked/original thread-source captures, and attachment save/import/download controls. It is labeled **Dev** in Chrome and in the panel. Download controls are selected at build time, with their code omitted from production; there is no runtime switch.
+The **ThreadLens Dev** package keeps the testing downloads from 1.7.2: text-only and masked conversations, masked/original thread-source captures, and attachment save/import/download controls. It is labeled **Dev** in Chrome and in the panel. Conversation export and diagnostic controls are selected at build time, with their code omitted from production; there is no runtime switch.
 
 | Command | Build folder | ZIP and extracted release folder |
 |---|---|---|
-| `npm run package:dev` | `dist-dev/` | `releases/threadlens-1.7.3-dev.zip` and `releases/threadlens-1.7.3-dev/` |
-| `npm run package:prod` | `dist/` | `releases/threadlens-1.7.3-prod.zip` and `releases/threadlens-1.7.3-prod/` |
+| `npm run package:dev` | `dist-dev/` | `releases/threadlens-1.7.4-dev.zip` and `releases/threadlens-1.7.4-dev/` |
+| `npm run package:prod` | `dist/` | `releases/threadlens-1.7.4-prod.zip` and `releases/threadlens-1.7.4-prod/` |
 
 `release:dev` and `release:prod` are equivalent commands. Plain `package`, `release` and `build` default to production. Building one flavor does not replace the other. Select the matching folder with **Load unpacked**; enable only one ThreadLens build while using the mailbox. Reloading an older extension entry does not change the folder it loads.
 
@@ -47,13 +47,13 @@ Refresh Gmail after reloading the extension and export again. Existing downloade
 - Direct and recovered messages reconciled together, retaining quoted-only history after expansion.
 - Chronological ordering with date/time and an explicit label when a time is uncertain.
 - Tables, cell spans, lists, paragraphs, links and useful text styling.
-- Inline images in their original message position, with lazy loading and a full-size viewer.
+- Inline images in their original message position, with lazy loading, a full-size viewer and a **Download image** button beside **Close image**.
 - Incremental reading and offscreen parsing to reduce work inside Gmail. Collapsed emails expand only when you click **Read collapsed emails**.
 - Participant filters and search highlighting within formatted messages.
 - Attachment names and sizes when exposed by the page.
-- **Dev package only:** provider attachment links and explicit local file saving, downloading and removal. If **Save locally** cannot access the provider link, download the file through email and use **Choose downloaded file**.
+- Provider attachment links and explicit local file saving, downloading and removal. If **Save locally** cannot access the provider link, download the file through email and use **Choose downloaded file**.
 
-Dev package local attachment limits: **20 MB per file, 100 MB total**. Mail content stays in tab-specific browser session storage; attachment copies remain in local IndexedDB until removed. No app backend, cloud sync or AI service is used. Mail-host access enables extraction and file retrieval. Gmail image-proxy access enables image embedding; the offscreen permission moves parsing out of the mail page. Chrome 116 or later is required. Displaying HTTPS images contacts their image hosts; there is no ThreadLens server.
+Local attachment limits: **20 MB per file, 100 MB total**. Mail content stays in tab-specific browser session storage; attachment copies remain in local IndexedDB until removed. No app backend, cloud sync or AI service is used. Mail-host access enables extraction and file retrieval. Gmail image-proxy access enables image embedding; the offscreen permission moves parsing out of the mail page. Chrome 116 or later is required. Displaying HTTPS images contacts their image hosts; there is no ThreadLens server.
 
 ## What it can recover
 
@@ -129,13 +129,13 @@ Everything is written by the panel itself — no upload, no network, no extensio
 ## Building a release
 
 ```sh
-npm run package:prod   # production, without downloads
-npm run package:dev    # development testing, with downloads
+npm run package:prod   # production: attachments available; no conversation exports
+npm run package:dev    # development: attachments and testing exports available
 ```
 
 Each command runs typecheck, the full test suite, its optimized build and packaging. Node 22 or newer and Python 3 are required. If the default Node is older, the release command can use a suitable version already installed through nvm. Both `release:prod` and `release:dev` use the same checks. A failing check stops the pipeline.
 
-Each flavor produces a versioned ZIP and an extracted folder containing `manifest.json` and flavor-specific installation instructions. Package names come from `package.json`; packaging checks the version, manifest resources, build flavor, and emitted developer controls before writing the ZIP. Production packaging fails if developer controls or the diagnostic capture request remain in the bundle. Checksums are recorded in `releases/SHA256SUMS.txt`.
+Each flavor produces a versioned ZIP and an extracted folder containing `manifest.json` and flavor-specific installation instructions. Package names come from `package.json`; packaging checks the version, manifest resources, build flavor, and emitted developer controls before writing the ZIP. Production packaging fails if conversation export controls or the diagnostic capture request remain in the bundle. Both flavors must contain attachment controls. Checksums are recorded in `releases/SHA256SUMS.txt`.
 
 Use `npm run version:patch` or `npm run version:minor` before the package command when starting the next release. `dist/`, `dist-dev/` and `releases/` are ignored by Git.
 
@@ -159,7 +159,7 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs npm run test:packages
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
 ```
 
-The parser suite has **243 active checks**; one optional capture-file replay is skipped unless `THREADLENS_CAPTURE` names an input file. Package smoke checks production's absent download controls, absent diagnostic endpoint and absent attachment database, working developer downloads, and shared image/table/search/mail controls. The broader smoke covers thread reconstruction, expansion stability, jumps, attachment persistence and tab navigation. See **TEST_COVERAGE.md** and **CONTEXT.md** for details.
+The parser suite has **251 active checks**; one optional capture-file replay is skipped unless `THREADLENS_CAPTURE` names an input file. Package smoke checks production's absent conversation exports and diagnostic endpoint, developer exports, and attachment save/reload/download/remove/manual-import flows in both packages, alongside shared image/table/search/mail controls. The broader smoke covers thread reconstruction, expansion stability, jumps, attachment persistence and tab navigation. See **TEST_COVERAGE.md** and **CONTEXT.md** for details.
 
 ## Recreate release packages after cloning
 
@@ -167,7 +167,7 @@ Run `npm ci`, then `npm run package:prod` for the normal extension or `npm run p
 
 ## Image availability and performance
 
-Refresh the original mail tab after reloading the extension, then export again if using the Dev package. Pictures are shown in the panel, at full size when clicked; exports name them rather than carrying them, so an exported file holds no picture bytes or provider URLs. Images removed by the sender, unresolved `cid:` references, expired links or inaccessible provider resources remain visibly unavailable. Gmail's actual proxy URLs and images exposed as source-tab blobs are supported; images remain in position without splitting the message. Click an image to view its full dimensions.
+Refresh the original mail tab after reloading the extension, then export again if using the Dev package. Pictures are shown in the panel, at full size when clicked; exports name them rather than carrying them, so an exported file holds no picture bytes or provider URLs. Images removed by the sender, unresolved `cid:` references, expired links or inaccessible provider resources remain visibly unavailable. Gmail's actual proxy URLs and images exposed as source-tab blobs are supported; images remain in position without splitting the message. Click an image to view its full dimensions. Select **Download image** beside **Close image** to save the original raster file in either build. No screenshot or image resizing is used. The existing 8 MB image-loading limit applies; access failures appear in the viewer and leave Close image available.
 
 Parsing runs in an inert offscreen extension document. The mail page captures only new or changed messages in small idle batches, ignores unrelated toolbar/scroll mutations, and no longer automatically expands all Gmail messages. This reduces extension work on Gmail's main thread; it does not guarantee a particular live mailbox's frame rate. If older messages are missing because Gmail has not loaded their bodies, use **Read collapsed emails** (Gmail only).
 
