@@ -1,0 +1,122 @@
+{
+ "format": 1,
+ "appVersion": "unknown",
+ "masked": true,
+ "capturedAt": "2026-09-14T12:07:24.514Z",
+ "client": "gmail",
+ "threadId": "masked-1",
+ "subject": "Warehouse transfer movements",
+ "currentUserEmail": "person2@company2.example",
+ "url": "http://company8.example/?masked",
+ "messageSelector": "[data-message-id]",
+ "bodySelector": ".a3s.aiL, .a3s, .ii.gt > div, [data-message-text]",
+ "readerStats": {
+  "batches": 1,
+  "snapshots": 2,
+  "scans": 3,
+  "snapshotMs": 17.62070800000015,
+  "maxSnapshotMs": 9.485250000000065,
+  "ignoredMutations": 1,
+  "pending": 0
+ },
+ "messages": [
+  {
+   "position": 0,
+   "live": false,
+   "bodyFound": false,
+   "snapshot": null,
+   "containerHtml": "<div class=\"adn ads\" data-message-id=\"masked-2\" data-legacy-message-id=\"masked-3\"><div class=\"gE gt\"><span class=\"gD\" email=\"person4@company3.example\" name=\"Person 4\" data-hovercard-id=\"person4@company3.example\">Person 4</span><div class=\"hb\"><span class=\"g2\" email=\"person3@company1.example\">person3@company1.example</span><span class=\"g2\" email=\"person1@company1.example\">person1@company1.example</span></div><div class=\"gH\"><span class=\"g3\" title=\"Wed, Sep 9, 2026, 4:45 PM\">Wed, S</span></div></div></div>"
+  },
+  {
+   "position": 1,
+   "live": true,
+   "bodyFound": true,
+   "snapshot": {
+    "message": {
+     "id": "masked-4",
+     "sender": {
+      "name": "Person 1",
+      "email": "person1@company1.example",
+      "initials": "P1",
+      "avatarColor": "#D4A843"
+     },
+     "timestamp": "2026-09-10T03:44:00.000Z",
+     "timestampEstimated": false,
+     "body": "",
+     "source": "direct",
+     "index": 1,
+     "isCurrentUser": false,
+     "recipients": [
+      "person2@company2.example",
+      "person3@company1.example",
+      "person4@company3.example"
+     ],
+     "attachments": []
+    },
+    "html": "<p>Person 2, adding you to this conversation because you take over the reconciliation from October and will need the whole history of these warehouse transfer movements.</p><p><img src=\"https://ci0.googleusercontent.com/proxy/masked#https://images.example/image-1.png\" alt=\"Company 3 Freight\"></p><p><img src=\"data:image/png;base64,bWFza2VkLWltYWdlLTM=\" alt=\"Company 1\"></p><p>Thanks &amp; Regards</p><p>Person 1</p><p>Reconciliation Manager, Company 1</p><p>Direct line [phone-1]</p><div class=\"gmail_attr\">On Wed, Sep 9, 2026 at 16:45 <a href=\"mailto:person4@company3.example\">Person 4</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Looping in Person 1, who runs the reconciliation for Company 1 and will need the same numbers when the October cycle opens next month.</p><div class=\"gmail_attr\">On Tue, Sep 8, 2026 at 11:20 <a href=\"mailto:person3@company1.example\">Person 3</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Week 37 has four movements booked and the fifth is waiting on a slot at the northern gate. The schedule extract is attached below for reference.</p><p><img src=\"cid:masked-4@company.example\" alt=\"Week 37 schedule\"></p><div class=\"gmail_attr\">On Mon, Sep 7, 2026 at 08:30 <a href=\"mailto:person6@company3.example\">Person 6</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Adding Person 3 of Company 1, who holds the transfer schedule for the southern depots, so that the week 37 movements can be confirmed against the same baseline.</p><div class=\"gmail_attr\">On Sat, Sep 5, 2026 at 14:02 <a href=\"mailto:person4@company3.example\">Person 4</a> wrote:</div><blockquote class=\"gmail_quote\"><p>I have checked and currently there are no in-progress warehouse transfers outstanding.</p><div class=\"gmail_attr\">On Sat, Sep 5, 2026 at 09:10 <a href=\"mailto:person6@company3.example\">Person 6</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Hi Person 4,</p><p>Please pull together the opening position for every in-transit warehouse transfer so that we can agree the September baseline before the audit visit lands with us.</p><p>Thanks &amp; Regards</p><p>Person 6</p><p>Operations Lead, Company 3 Freight</p><p>Direct line [phone-1]</p></blockquote></blockquote></blockquote></blockquote></blockquote>",
+    "imageSources": [
+     "https://ci0.googleusercontent.com/proxy/masked#https://images.example/image-1.png",
+     "data:image/png;base64,bWFza2VkLWltYWdlLTM=",
+     "cid:masked-4@company.example"
+    ]
+   },
+   "containerHtml": "<div class=\"adn ads\" data-message-id=\"masked-4\" data-legacy-message-id=\"masked-5\"><div class=\"gE gt\"><span class=\"gD\" email=\"person1@company1.example\" name=\"Person 1\" data-hovercard-id=\"person1@company1.example\">Person 1</span><div class=\"hb\"><span class=\"g2\" email=\"person2@company2.example\">person2@company2.example</span><span class=\"g2\" email=\"person3@company1.example\">person3@company1.example</span><span class=\"g2\" email=\"person4@company3.example\">person4@company3.example</span></div><div class=\"gH\"><span class=\"g3\" title=\"Thu, Sep 10, 2026, 9:14 AM\">Thu, S</span></div></div><div class=\"ii gt\"><div class=\"a3s aiL\"><p>Person 2, adding you to this conversation because you take over the reconciliation from October and will need the whole history of these warehouse transfer movements.</p><p><img src=\"https://ci0.googleusercontent.com/proxy/masked#https://images.example/image-1.png\" alt=\"Company 3 Freight\"></p><p><img src=\"data:image/png;base64,bWFza2VkLWltYWdlLTM=\" alt=\"Company 1\"></p><p>Thanks &amp; Regards</p><p>Person 1</p><p>Reconciliation Manager, Company 1</p><p>Direct line [phone-1]</p><div class=\"gmail_attr\">On Wed, Sep 9, 2026 at 16:45 <a href=\"mailto:person4@company3.example\">Person 4</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Looping in Person 1, who runs the reconciliation for Company 1 and will need the same numbers when the October cycle opens next month.</p><div class=\"gmail_attr\">On Tue, Sep 8, 2026 at 11:20 <a href=\"mailto:person3@company1.example\">Person 3</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Week 37 has four movements booked and the fifth is waiting on a slot at the northern gate. The schedule extract is attached below for reference.</p><p><img src=\"cid:masked-4@company.example\" alt=\"Week 37 schedule\"></p><div class=\"gmail_attr\">On Mon, Sep 7, 2026 at 08:30 <a href=\"mailto:person6@company3.example\">Person 6</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Adding Person 3 of Company 1, who holds the transfer schedule for the southern depots, so that the week 37 movements can be confirmed against the same baseline.</p><div class=\"gmail_attr\">On Sat, Sep 5, 2026 at 14:02 <a href=\"mailto:person4@company3.example\">Person 4</a> wrote:</div><blockquote class=\"gmail_quote\"><p>I have checked and currently there are no in-progress warehouse transfers outstanding.</p><div class=\"gmail_attr\">On Sat, Sep 5, 2026 at 09:10 <a href=\"mailto:person6@company3.example\">Person 6</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Hi Person 4,</p><p>Please pull together the opening position for every in-transit warehouse transfer so that we can agree the September baseline before the audit visit lands with us.</p><p>Thanks &amp; Regards</p><p>Person 6</p><p>Operations Lead, Company 3 Freight</p><p>Direct line [phone-1]</p></blockquote></blockquote></blockquote></blockquote></blockquote></div></div></div>"
+  },
+  {
+   "position": 2,
+   "live": true,
+   "bodyFound": true,
+   "snapshot": {
+    "message": {
+     "id": "masked-6",
+     "sender": {
+      "name": "Person 3",
+      "email": "person3@company1.example",
+      "initials": "P3",
+      "avatarColor": "#5BAD8F"
+     },
+     "timestamp": "2026-09-11T04:35:00.000Z",
+     "timestampEstimated": false,
+     "body": "",
+     "source": "direct",
+     "index": 2,
+     "isCurrentUser": false,
+     "recipients": [
+      "person2@company2.example",
+      "person1@company1.example"
+     ],
+     "attachments": [
+      {
+       "name": "week-37-Company 3-schedule.xlsx",
+       "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+       "sizeLabel": "18 KB",
+       "downloadUrl": ""
+      }
+     ]
+    },
+    "html": "<p>Noted, and the four booked movements still stand for week 37. I will confirm the fifth once the northern gate slot is released, which should be before the audit visit.</p><p><img src=\"blob:https://mail.google.com/masked-5\" alt=\"Company 3 Freight\"></p><p><img src=\"blob:https://mail.google.com/masked-6\" alt=\"Company 1\"></p><div class=\"gmail_attr\">On Thu, Sep 10, 2026 at 09:14 <a href=\"mailto:person1@company1.example\">Person 1</a> wrote:</div><blockquote class=\"gmail_quote\"><p>ⓘ External email ❯</p><p>Person 2, adding you to this conversation because you take over the reconciliation from October and will need the whole history of these warehouse transfer movements.</p><p><img src=\"https://ci0.googleusercontent.com/proxy/masked#https://images.example/image-1.png\" alt=\"Company 3 Freight\"></p><p><img src=\"data:image/png;base64,bWFza2VkLWltYWdlLTM=\" alt=\"Company 1\"></p><p>Thanks &amp; Regards</p><p>Person 1</p><p>Reconciliation Manager, Company 1</p><p>Direct line [phone-1]</p><div class=\"gmail_attr\">On Wed, Sep 9, 2026 at 16:45 <a href=\"mailto:person4@company3.example\">Person 4</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Looping in Person 1, who runs the reconciliation for Company 1 and will need the same numbers when the October cycle opens next month.</p><div class=\"gmail_attr\">On Tue, Sep 8, 2026 at 11:20 <a href=\"mailto:person3@company1.example\">Person 3</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Week 37 has four movements booked and the fifth is waiting on a slot at the northern gate. The schedule extract is attached below for reference.</p><p><img src=\"cid:masked-4@company.example\" alt=\"Week 37 schedule\"></p><div class=\"gmail_attr\">On Mon, Sep 7, 2026 at 08:30 <a href=\"mailto:person6@company3.example\">Person 6</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Adding Person 3 of Company 1, who holds the transfer schedule for the southern depots, so that the week 37 movements can be confirmed against the same baseline.</p><div class=\"gmail_attr\">On Sat, Sep 5, 2026 at 14:02 <a href=\"mailto:person4@company3.example\">Person 4</a> wrote:</div><blockquote class=\"gmail_quote\"><p>I have checked and currently there are no in-progress warehouse transfers outstanding.</p><div class=\"gmail_attr\">On Sat, Sep 5, 2026 at 09:10 <a href=\"mailto:person6@company3.example\">Person 6</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Hi Person 4,</p><p>Please pull together the opening position for every in-transit warehouse transfer so that we can agree the September baseline before the audit visit lands with us.</p><p>Thanks &amp; Regards</p><p>Person 6</p><p>Operations Lead, Company 3 Freight</p><p>Direct line [phone-1]</p></blockquote></blockquote></blockquote></blockquote></blockquote></blockquote><div>[Message clipped] <a href=\"https://company9.example/view-entire\">View entire message</a></div>",
+    "imageSources": [
+     "blob:https://mail.google.com/masked-5",
+     "blob:https://mail.google.com/masked-6",
+     "https://ci0.googleusercontent.com/proxy/masked#https://images.example/image-1.png",
+     "data:image/png;base64,bWFza2VkLWltYWdlLTM=",
+     "cid:masked-4@company.example"
+    ]
+   },
+   "containerHtml": "<div class=\"adn ads\" data-message-id=\"masked-6\" data-legacy-message-id=\"masked-7\"><div class=\"gE gt\"><span class=\"gD\" email=\"person3@company1.example\" name=\"Person 3\" data-hovercard-id=\"person3@company1.example\">Person 3</span><div class=\"hb\"><span class=\"g2\" email=\"person2@company2.example\">person2@company2.example</span><span class=\"g2\" email=\"person1@company1.example\">person1@company1.example</span></div><div class=\"gH\"><span class=\"g3\" title=\"Fri, Sep 11, 2026, 10:05 AM\">Fri, S</span></div></div><div class=\"ii gt\"><div class=\"a3s aiL\"><p>Noted, and the four booked movements still stand for week 37. I will confirm the fifth once the northern gate slot is released, which should be before the audit visit.</p><p><img src=\"blob:https://mail.google.com/masked-5\" alt=\"Company 3 Freight\"></p><p><img src=\"blob:https://mail.google.com/masked-6\" alt=\"Company 1\"></p><div class=\"gmail_attr\">On Thu, Sep 10, 2026 at 09:14 <a href=\"mailto:person1@company1.example\">Person 1</a> wrote:</div><blockquote class=\"gmail_quote\"><p>ⓘ External email ❯</p><p>Person 2, adding you to this conversation because you take over the reconciliation from October and will need the whole history of these warehouse transfer movements.</p><p><img src=\"https://ci0.googleusercontent.com/proxy/masked#https://images.example/image-1.png\" alt=\"Company 3 Freight\"></p><p><img src=\"data:image/png;base64,bWFza2VkLWltYWdlLTM=\" alt=\"Company 1\"></p><p>Thanks &amp; Regards</p><p>Person 1</p><p>Reconciliation Manager, Company 1</p><p>Direct line [phone-1]</p><div class=\"gmail_attr\">On Wed, Sep 9, 2026 at 16:45 <a href=\"mailto:person4@company3.example\">Person 4</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Looping in Person 1, who runs the reconciliation for Company 1 and will need the same numbers when the October cycle opens next month.</p><div class=\"gmail_attr\">On Tue, Sep 8, 2026 at 11:20 <a href=\"mailto:person3@company1.example\">Person 3</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Week 37 has four movements booked and the fifth is waiting on a slot at the northern gate. The schedule extract is attached below for reference.</p><p><img src=\"cid:masked-4@company.example\" alt=\"Week 37 schedule\"></p><div class=\"gmail_attr\">On Mon, Sep 7, 2026 at 08:30 <a href=\"mailto:person6@company3.example\">Person 6</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Adding Person 3 of Company 1, who holds the transfer schedule for the southern depots, so that the week 37 movements can be confirmed against the same baseline.</p><div class=\"gmail_attr\">On Sat, Sep 5, 2026 at 14:02 <a href=\"mailto:person4@company3.example\">Person 4</a> wrote:</div><blockquote class=\"gmail_quote\"><p>I have checked and currently there are no in-progress warehouse transfers outstanding.</p><div class=\"gmail_attr\">On Sat, Sep 5, 2026 at 09:10 <a href=\"mailto:person6@company3.example\">Person 6</a> wrote:</div><blockquote class=\"gmail_quote\"><p>Hi Person 4,</p><p>Please pull together the opening position for every in-transit warehouse transfer so that we can agree the September baseline before the audit visit lands with us.</p><p>Thanks &amp; Regards</p><p>Person 6</p><p>Operations Lead, Company 3 Freight</p><p>Direct line [phone-1]</p></blockquote></blockquote></blockquote></blockquote></blockquote></blockquote><div>[Message clipped] <a href=\"https://company9.example/view-entire\">View entire message</a></div></div></div><div class=\"aZo\"><span class=\"aV3\">week-37-Company 3-schedule.xlsx</span><span class=\"aV7\">18 KB</span></div></div>"
+  }
+ ],
+ "notes": [
+  "Some rows render no body and are recorded as headers only; a collapsed email is not readable until it is opened.",
+  "Some messages were read for this capture rather than taken from what the parser already received."
+ ],
+ "fidelity": {
+  "checkedAt": "2026-09-14T12:07:25.835Z",
+  "sameStructure": true,
+  "orderIndependent": true,
+  "originalMessages": 7,
+  "maskedMessages": 7,
+  "differences": [],
+  "summary": "The masked copy parses to the same 7 message(s) as the original, with the same order, clocks, quote links and pictures."
+ }
+}

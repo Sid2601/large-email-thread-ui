@@ -4,28 +4,29 @@ import { crx } from '@crxjs/vite-plugin'
 import manifestBase from './manifest.json'
 import pkg from './package.json'
 
-// package.json is the single source of truth for the version.
-// The manifest.json version field is overridden here at build time so there
-// is never a drift between the npm package version and the extension version.
-const manifest = {
-  ...manifestBase,
-  version: pkg.version,
-}
+export default defineConfig(({ mode }) => {
+  // Only this explicit mode includes file downloads and diagnostics. Vite's
+  // import.meta.env.DEV is false for both optimized release builds.
+  const devTools = mode === 'development';
+  const manifest = {
+    ...manifestBase,
+    // package.json is the single source of truth for the extension version.
+    version: pkg.version,
+    name: devTools ? `${manifestBase.name} Dev` : manifestBase.name,
+  }
 
-export default defineConfig({
-  plugins: [
-    react(),
-    crx({ manifest }),
-  ],
-  build: {
-    // Chrome cannot reliably reuse extension preloads across execution worlds.
-    // Keep normal module imports; omit the optional preload hints/polyfill.
-    modulePreload: false,
-    rollupOptions: { input: { offscreen: 'src/offscreen/index.html' } },
-  },
-  define: {
-    // Injected as a build-time string constant — zero runtime overhead.
-    // Accessible anywhere in the React app as __APP_VERSION__.
-    __APP_VERSION__: JSON.stringify(pkg.version),
-  },
+  return {
+    plugins: [react(), crx({ manifest })],
+    build: {
+      outDir: devTools ? 'dist-dev' : 'dist',
+      emptyOutDir: true,
+      // Chrome cannot reuse extension preloads across execution worlds.
+      modulePreload: false,
+      rollupOptions: { input: { offscreen: 'src/offscreen/index.html' } },
+    },
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __DEV_TOOLS__: JSON.stringify(devTools),
+    },
+  }
 })

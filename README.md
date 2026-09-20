@@ -1,4 +1,4 @@
-# ThreadLens 1.6.3
+# ThreadLens 1.7.3
 
 A local Chrome extension that displays long Gmail and Outlook email conversations as chronological chat messages. Included quoted history is split into individual messages, including when you join a conversation midway.
 
@@ -10,11 +10,34 @@ A local Chrome extension that displays long Gmail and Outlook email conversation
 4. If ThreadLens is already loaded from that directory, click **Reload** on its extension card.
 5. Refresh your Gmail/Outlook tab, open an email conversation, then click the ThreadLens toolbar icon.
 
-The ZIP in `releases/threadlens-1.6.3.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
+The ZIP in `releases/threadlens-1.7.3-prod.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
 
-## Expansion stability in 1.6.3
+## Development and production packages in 1.7.3
 
-Opening an email already represented in quoted history now reconciles image filename/alt differences without adding duplicate messages. Formatting-only and provider-clipped copies no longer create a redundant “Quoted copy differs” section. Fuller text and available images are retained; actual wording, signature and identifiable image changes remain inspectable.
+The production extension contains no conversation exports, diagnostic capture downloads, attachment download links, or local attachment save/import controls. Attachment names/sizes, inline image viewing, tables, search, participants, history recovery and Gmail expand/collapse controls remain available. Retrieve attachment files in the original email application.
+
+The **ThreadLens Dev** package keeps the testing downloads from 1.7.2: text-only and masked conversations, masked/original thread-source captures, and attachment save/import/download controls. It is labeled **Dev** in Chrome and in the panel. Download controls are selected at build time, with their code omitted from production; there is no runtime switch.
+
+| Command | Build folder | ZIP and extracted release folder |
+|---|---|---|
+| `npm run package:dev` | `dist-dev/` | `releases/threadlens-1.7.3-dev.zip` and `releases/threadlens-1.7.3-dev/` |
+| `npm run package:prod` | `dist/` | `releases/threadlens-1.7.3-prod.zip` and `releases/threadlens-1.7.3-prod/` |
+
+`release:dev` and `release:prod` are equivalent commands. Plain `package`, `release` and `build` default to production. Building one flavor does not replace the other. Select the matching folder with **Load unpacked**; enable only one ThreadLens build while using the mailbox. Reloading an older extension entry does not change the folder it loads.
+
+## A shorter panel in 1.7.2
+
+The picture-embedding download is gone — the text-only and masked copies remain, and neither writes picture bytes. **Read collapsed emails** now has an opposite, **Collapse emails again**, which puts the mailbox back as you found it; everything ThreadLens has already recovered stays in the panel whether or not Gmail is still showing it. A long thread also gets two round buttons at the bottom of the chat, as a messaging app does: ↑ jumps to the first message and ↓ to the latest, each appearing only when there is somewhere to go. `Home` and `End` do the same from the keyboard.
+
+## One person, one identity in 1.7.1
+
+A quoted attribution names its author but usually records no address, so ThreadLens had to invent one — and the same colleague appeared twice in the participant bar, in two colours, once under their address and once under their name alone. A name-only author is now given the address the thread itself shows for that name: one they have written from, one the To and Cc lines carry for them, or, for a lone first name, the one person in the thread who has it. Where the thread offers no such evidence — a nickname like "DJ", or an author it never addresses — they are still shown as themselves rather than linked to somebody who might not be them. Masked copies keep the same grouping, and no longer invent an address for an author who never gave one.
+
+## Reporting a parsing problem in 1.7.0
+
+Some conversations only go wrong in a real mailbox, and the exported conversation cannot show why: by then the provider's own markup — the thing ThreadLens actually reads — is gone. **Report a parsing problem** in the Dev package, under the export buttons, saves that markup instead, masked so it can be sent to whoever is diagnosing the problem. Before either file is written the two copies are parsed and compared, and the answer is written into the file and shown in the panel, so nobody has to assume the masked copy still reproduces the problem. See [Report a parsing problem](#report-a-parsing-problem).
+
+Expansion stability from 1.6.3 is unchanged: opening an email already represented in quoted history reconciles image filename/alt differences without adding duplicate messages, and formatting-only or provider-clipped copies do not create a redundant “Quoted copy differs” section.
 
 Refresh Gmail after reloading the extension and export again. Existing downloaded HTML files remain unchanged. Expanding an email can still reveal previously unavailable history or refine an estimated date.
 
@@ -27,10 +50,10 @@ Refresh Gmail after reloading the extension and export again. Existing downloade
 - Inline images in their original message position, with lazy loading and a full-size viewer.
 - Incremental reading and offscreen parsing to reduce work inside Gmail. Collapsed emails expand only when you click **Read collapsed emails**.
 - Participant filters and search highlighting within formatted messages.
-- Attachment metadata and provider links when exposed by the page.
-- Explicit local file saving, downloading and removal. If **Save locally** cannot access the provider link, download the file through email and use **Choose downloaded file**.
+- Attachment names and sizes when exposed by the page.
+- **Dev package only:** provider attachment links and explicit local file saving, downloading and removal. If **Save locally** cannot access the provider link, download the file through email and use **Choose downloaded file**.
 
-Local attachment limits: **20 MB per file, 100 MB total**. Mail content stays in tab-specific browser session storage; attachment copies remain in local IndexedDB until removed. No app backend, cloud sync or AI service is used. Mail-host access enables extraction and file retrieval. Gmail image-proxy access enables image embedding; the offscreen permission moves parsing out of the mail page. Chrome 116 or later is required. Displaying HTTPS images contacts their image hosts; there is no ThreadLens server.
+Dev package local attachment limits: **20 MB per file, 100 MB total**. Mail content stays in tab-specific browser session storage; attachment copies remain in local IndexedDB until removed. No app backend, cloud sync or AI service is used. Mail-host access enables extraction and file retrieval. Gmail image-proxy access enables image embedding; the offscreen permission moves parsing out of the mail page. Chrome 116 or later is required. Displaying HTTPS images contacts their image hosts; there is no ThreadLens server.
 
 ## What it can recover
 
@@ -66,9 +89,9 @@ When a thread is forwarded or replied to without any new words, ThreadLens says 
 
 ## Download an entire conversation
 
-Click **Download conversation (.html)** under the subject in the side panel. The single standalone HTML file opens in a browser and preserves message order, sender names/addresses, timestamps, tables, lists and text formatting. It includes all recovered messages even when search or a participant filter is active. Available inline raster images are embedded for offline viewing (8 MB per fetched image, 50 MB of encoded image data per export). If embedding fails, the file visibly identifies the image and retains its HTTPS source when available. Attachment names are listed; separate attachment file bytes and provider download URLs are not embedded. Use the attachment buttons to download files separately. You can also print the HTML from your browser.
+Available only in **ThreadLens Dev**.
 
-**Text only (no images)** next to it writes the same conversation with no image or attachment data at all: every inline image becomes a placeholder naming the file, such as `image-1.png` or the source's own `chart-q4.png`, and no provider URLs are written. The file is a few kilobytes instead of megabytes, opens identically offline, and is the copy to use for testing or for sharing a thread's structure without its pictures. It is saved as `ThreadLens-<subject>-<date>-no-images.html`.
+Click **Text only (no images)** under the subject in the side panel. The single standalone HTML file opens in a browser and preserves message order, sender names/addresses, timestamps, tables, lists and text formatting. It includes all recovered messages even when search or a participant filter is active. No image or attachment data is written: every inline image becomes a placeholder naming the file, such as `image-1.png` or the source's own `chart-q4.png`, and no provider URLs are written. The file is a few kilobytes rather than megabytes, opens identically offline, and is saved as `ThreadLens-<subject>-<date>-no-images.html`. Attachment names are listed; use the attachment buttons to download the files themselves. You can also print the HTML from your browser.
 
 **Masked copy (share-safe)** writes the same conversation with the identities removed, for handing a thread to someone who is helping you diagnose a parsing problem. Every email address, sender name, name mentioned in a body or signature, company domain, phone number, long reference number, link address, attachment name and internal message id is replaced by a numbered placeholder — `Person 1`, `person1@company1.example`, `Company 2`, `[phone-1]` — and the same real value always becomes the same placeholder, so reply chains, duplicate quotes, who answered whom and who joined when all still read correctly. A capitalised short form of a known name is masked too — `Sid` for Siddharth, `Elevation` for elevationservices.co.uk, and `WarehousePartners` written as one word in a filename — while ordinary lowercase words such as "the car park" are left alone. Consumer mail hosts such as `gmail.com` stay readable because they identify nobody.
 
@@ -76,28 +99,45 @@ Message wording, formatting, tables, order, timestamps, recovery labels and quot
 
 Masking is a strong default, not a guarantee: a nickname that shares no opening letters with the real name, an identity written only inside a picture, and a company named in prose but never in an address or domain can survive. Open the file and read it before sending it anywhere.
 
+## Report a parsing problem
+
+Available only in **ThreadLens Dev**. Production omits both the download UI and the source-capture handler.
+
+A masked conversation shows what ThreadLens produced. When the problem is in what it *read* — an email split in the wrong place, one email shown twice, a message that never appears, a date read from the wrong element — the evidence is the mail page's own markup, and the conversation export no longer contains it. Open **Report a parsing problem** under the export buttons for two more downloads:
+
+- **Thread source (masked)** — the provider's markup for every email in the thread, with every identity replaced exactly as in the masked conversation. This is the file to send. It is saved as `ThreadLens-<subject>-<date>-source-masked.json`.
+- **Thread source (original, private)** — the same file with the real names and addresses still in it. Keep it locally to see what the masked copy replaced. Do not send it.
+
+Each entry holds the whole provider container — header row, date cell, recipient chips, attachment chips — and, separately, the exact snapshot the parser received for that email, so a scraping problem and a parsing problem can be told apart. A collapsed row that renders no body is recorded as headers only and says so. Inline picture bytes are never written: each payload is folded to a short digest that keeps "the same picture" and "a different picture" telling apart exactly as they did, and blob, proxy, `cid:` and ordinary addresses each keep their own kind of placeholder, because reconciliation reads those differences when deciding whether two copies are one email.
+
+**Both copies are always parsed and compared before either is saved.** Masking shortens names, and reconciliation weighs how much text two copies share, so a masked copy is not assumed to behave like the original — it is checked. The panel reports the result, and the file records it:
+
+> The masked copy parses to the same 21 message(s) as the original, with the same order, clocks, quote links and pictures.
+
+If the two disagree, the file lists exactly which message and which field moved, and the panel says to send the original as well if that is possible. The thread is also read twice — whole, and in batches the way a mailbox delivers it — because a difference between those two is a parsing problem in itself.
+
+To read a capture back without a browser or a mailbox:
+
+```sh
+npm run replay -- ThreadLens-<subject>-<date>-source-masked.json
+```
+
+It prints what the parser makes of the file: how many containers were captured, how many messages came out, whether reading it whole and in batches agree, and one line per message with its sender, clock, variants and attachments. `artifacts/thread-source-capture.json` is a synthetic example of the format.
+
+Everything is written by the panel itself — no upload, no network, no extension download permission.
+
 ## Building a release
 
 ```sh
-npm run release
+npm run package:prod   # production, without downloads
+npm run package:dev    # development testing, with downloads
 ```
 
-One command does everything: typecheck, the full test suite, the production build, then packaging. It stops at the first failure and releases nothing. Node 22 or newer is required (the test runner needs it); if your shell's default `node` is older, the command finds an installed Node 22 through nvm and re-runs itself on it rather than failing part-way.
+Each command runs typecheck, the full test suite, its optimized build and packaging. Node 22 or newer and Python 3 are required. If the default Node is older, the release command can use a suitable version already installed through nvm. Both `release:prod` and `release:dev` use the same checks. A failing check stops the pipeline.
 
-It leaves two things in `releases/`:
+Each flavor produces a versioned ZIP and an extracted folder containing `manifest.json` and flavor-specific installation instructions. Package names come from `package.json`; packaging checks the version, manifest resources, build flavor, and emitted developer controls before writing the ZIP. Production packaging fails if developer controls or the diagnostic capture request remain in the bundle. Checksums are recorded in `releases/SHA256SUMS.txt`.
 
-- `threadlens-<version>/` — an unpacked folder. In `chrome://extensions`, turn on Developer mode, click **Load unpacked** and select it. If ThreadLens is already loaded, press **Reload** on its card instead, then refresh Gmail or Outlook and reopen the panel.
-- `threadlens-<version>.zip` — the same thing zipped, with an `INSTALL.txt`, for sharing. Its SHA-256 is printed at the end and recorded in `releases/SHA256SUMS.txt`.
-
-To change the version first (the archive is named from `package.json`, and packaging refuses to run if the built manifest disagrees):
-
-```sh
-npm run version:patch   # fixes
-npm run version:minor   # features
-npm run release
-```
-
-`releases/` is ignored by git; the build is local.
+Use `npm run version:patch` or `npm run version:minor` before the package command when starting the next release. `dist/`, `dist-dev/` and `releases/` are ignored by Git.
 
 ## Development
 
@@ -105,24 +145,29 @@ npm run release
 npm ci
 npm run typecheck
 npm test
-npm run build
+npm run build:dev      # optimized dev build in dist-dev/
+npm run dev            # rebuild that dev folder on changes
+npm run build:prod     # optimized production build in dist/
 ```
 
-Optional full extension smoke test, with an available Playwright installation and Chromium:
+With an available Playwright installation and Chromium:
 
 ```sh
+# Build both packages first, then verify the actual delivered folders:
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs npm run test:packages
+# Broader development extension smoke (requires dist-dev/):
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
 ```
 
-The parser suite has **150 passing checks**, including a 40-message case. The browser smoke tests extraction, table rendering, rich search, attachment persistence/download/removal and tab navigation. See **TEST_COVERAGE.md** for the covered cases, and **CONTEXT.md** for architecture, implementation decisions, limitations and next checks.
+The parser suite has **243 active checks**; one optional capture-file replay is skipped unless `THREADLENS_CAPTURE` names an input file. Package smoke checks production's absent download controls, absent diagnostic endpoint and absent attachment database, working developer downloads, and shared image/table/search/mail controls. The broader smoke covers thread reconstruction, expansion stability, jumps, attachment persistence and tab navigation. See **TEST_COVERAGE.md** and **CONTEXT.md** for details.
 
-## Recreate release downloads after cloning
+## Recreate release packages after cloning
 
-The generated `dist/` and `releases/` directories are intentionally ignored by Git. All source for the 1.5.1 fixes is in main. Run `npm ci` and `npm run package` (Node.js 20.19+ and Python 3) to validate, rebuild, and produce `releases/threadlens-<version>.zip` with installation instructions and SHA-256 checksums. The ZIP contains a root manifest.json and can be extracted and loaded unpacked in Chrome. No customer mail is included.
+Run `npm ci`, then `npm run package:prod` for the normal extension or `npm run package:dev` for testing. Generated packages are local and are not committed. Extract the chosen ZIP and load the directory containing its root `manifest.json` in Chrome. No customer mail is included.
 
 ## Image availability and performance
 
-Refresh the original mail tab after reloading the extension, then export again. Exports created before 1.4.0 contain text placeholders without image bytes or URLs and cannot restore those pictures. Images removed by the sender, unresolved `cid:` references, expired links or inaccessible provider resources remain visibly unavailable. Gmail's actual proxy URLs and images exposed as source-tab blobs are supported; images remain in position without splitting the message. Click an image to view its full dimensions.
+Refresh the original mail tab after reloading the extension, then export again if using the Dev package. Pictures are shown in the panel, at full size when clicked; exports name them rather than carrying them, so an exported file holds no picture bytes or provider URLs. Images removed by the sender, unresolved `cid:` references, expired links or inaccessible provider resources remain visibly unavailable. Gmail's actual proxy URLs and images exposed as source-tab blobs are supported; images remain in position without splitting the message. Click an image to view its full dimensions.
 
 Parsing runs in an inert offscreen extension document. The mail page captures only new or changed messages in small idle batches, ignores unrelated toolbar/scroll mutations, and no longer automatically expands all Gmail messages. This reduces extension work on Gmail's main thread; it does not guarantee a particular live mailbox's frame rate. If older messages are missing because Gmail has not loaded their bodies, use **Read collapsed emails** (Gmail only).
 

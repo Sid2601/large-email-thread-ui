@@ -7,14 +7,20 @@ import { ChatThread } from './components/ChatThread';
 import { SearchBar } from './components/SearchBar';
 import { ParticipantSidebar } from './components/ParticipantSidebar';
 import { LoadingState } from './components/LoadingState';
-import { downloadConversation } from './export/conversation';
+import { DevDownloads } from './components/DevDownloads';
 import { EmptyState } from './components/EmptyState';
 
 export default function App() {
   const { threadData, isLoading } = useThreadData();
-  const [exporting, setExporting] = useState<'' | 'full' | 'light' | 'masked'>('');
-  const [exportError, setExportError] = useState('');
-  useEffect(() => setExportError(''), [threadData?.threadId]);
+  const [mailError, setMailError] = useState('');
+  useEffect(() => setMailError(''), [threadData?.threadId]);
+  /** Expanding and collapsing happen in the mail page; only it can do them. */
+  function tellMailTab(type: string, failure: string) {
+    setMailError('');
+    if (threadData?.sourceTabId === undefined) return setMailError(failure);
+    void chrome.tabs.sendMessage(threadData.sourceTabId, { type }).catch(() => setMailError(failure));
+  }
+
   const { selectedEmail, selectSender, filteredMessages: participantFiltered } = useParticipantFilter(threadData);
   const { query, setQuery, filteredMessages: searchedMessages } = useSearch(participantFiltered);
 
@@ -33,7 +39,7 @@ export default function App() {
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
-        <span className="text-sm font-semibold text-blue-600">ThreadLens</span>
+        <span className="text-sm font-semibold text-blue-600">ThreadLens{__DEV_TOOLS__ ? ' Dev' : ''}</span>
         {threadData && (
           <span className="text-xs text-gray-400 dark:text-gray-500 truncate">
             {threadData.messages.length} messages
@@ -50,47 +56,12 @@ export default function App() {
         <>
           <div className="px-3 py-2 border-b text-xs text-gray-500">
             <p className="font-semibold text-gray-800 dark:text-gray-100">{threadData.subject}</p>
-            <button
-              type="button"
-              className="mt-2 mb-1 rounded border border-blue-200 dark:border-blue-800 px-2 py-1.5 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-50 dark:hover:bg-gray-800 disabled:opacity-60"
-              title="Download all recovered messages as one HTML file, including formatting, available inline images and attachment names. Other attachment files are downloaded separately."
-              disabled={exporting !== ''}
-              onClick={async () => {
-                setExporting('full');
-                setExportError('');
-                try { const missing = await downloadConversation(threadData); if (missing) setExportError(`${missing} image(s) could not be embedded; the export explains which images need email access.`); }
-                catch { setExportError('Could not export the conversation. Please try again.'); }
-                finally { setExporting(''); }
-              }}
-            >{exporting === 'full' ? 'Preparing images…' : '↓ Download conversation (.html)'}</button>
-            <button
-              type="button"
-              className="mt-2 mb-1 ml-2 rounded border border-gray-300 dark:border-gray-600 px-2 py-1.5 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-60"
-              title="Download the same messages as a small file for testing: no image or attachment data is written, and each inline image is replaced by its filename (for example image-1.png)."
-              disabled={exporting !== ''}
-              onClick={async () => {
-                setExporting('light');
-                setExportError('');
-                try { await downloadConversation(threadData, { includeImages: false }); }
-                catch { setExportError('Could not export the conversation. Please try again.'); }
-                finally { setExporting(''); }
-              }}
-            >{exporting === 'light' ? 'Preparing file…' : '↓ Text only (no images)'}</button>
-            <button
-              type="button"
-              className="mt-2 mb-1 ml-2 rounded border border-amber-300 dark:border-amber-700 px-2 py-1.5 text-amber-800 dark:text-amber-300 font-medium hover:bg-amber-50 dark:hover:bg-gray-800 disabled:opacity-60"
-              title="Download the same messages with every name, email address, company domain, phone number and link replaced by a consistent placeholder such as Person 1. Images and attachment data are not included. Message wording, order, timestamps and formatting are unchanged, so the file is safe to share for diagnosis."
-              disabled={exporting !== ''}
-              onClick={async () => {
-                setExporting('masked');
-                setExportError('');
-                try { await downloadConversation(threadData, { mask: true }); }
-                catch { setExportError('Could not export the masked conversation. Please try again.'); }
-                finally { setExporting(''); }
-              }}
-            >{exporting === 'masked' ? 'Masking identities…' : '↓ Masked copy (share-safe)'}</button>
-            {threadData.client === 'gmail' && <button className="ml-2 text-blue-700 dark:text-blue-300 underline" title="Only if older history is missing: expand collapsed emails in Gmail and read them." onClick={() => { if (threadData.sourceTabId !== undefined) void chrome.tabs.sendMessage(threadData.sourceTabId, { type: 'EXPAND_THREAD' }).catch(() => setExportError('Refresh the original mail tab to read collapsed emails.')); }}>Read collapsed emails</button>}
-            {exportError && <p role="alert" className="text-red-600">{exportError}</p>}
+            {__DEV_TOOLS__ && <DevDownloads key={threadData.threadId} threadData={threadData} />}
+            {threadData.client === 'gmail' && <>
+              <button className="ml-2 text-blue-700 dark:text-blue-300 underline" title="Only if older history is missing: expand collapsed emails in Gmail and read them." onClick={() => tellMailTab('EXPAND_THREAD', 'Refresh the original mail tab to read collapsed emails.')}>Read collapsed emails</button>
+              <button className="ml-2 text-blue-700 dark:text-blue-300 underline" title="Collapse the emails again in Gmail, leaving the mailbox as you found it. Everything already read stays in this panel." onClick={() => tellMailTab('COLLAPSE_THREAD', 'Refresh the original mail tab to collapse its emails.')}>Collapse emails again</button>
+            </>}
+            {mailError && <p role="alert" className="text-red-600">{mailError}</p>}
             <p className="mt-1">Includes history quoted in the emails available here. Earlier messages or files omitted by the sender cannot be recovered.</p>
           </div>
           <ParticipantSidebar

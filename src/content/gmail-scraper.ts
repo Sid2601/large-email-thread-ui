@@ -33,6 +33,26 @@ function getSubject(): string {
     ?.textContent?.trim() ?? 'Email Thread';
 }
 
+/** The inverse of expanding: an opened thread is long, and a reader who has finished with the
+ * history wants the mailbox back as it was. Only an expanded email is clicked, because clicking
+ * a collapsed one would open it. Nothing already read is lost from the panel: the messages are
+ * held by the extension, not by the page. */
+function tryCollapseAll(): void {
+  const collapseBtn = document.querySelector<HTMLElement>(
+    '[data-tooltip="Collapse all"], [aria-label="Collapse all"], button[title="Collapse all"]'
+  );
+  if (collapseBtn) {
+    collapseBtn.click();
+    return;
+  }
+  document.querySelectorAll<HTMLElement>('[data-message-id]').forEach(container => {
+    if (container.querySelector('.a3s')) {
+      (container.querySelector<HTMLElement>('.gE') ??
+       container.querySelector<HTMLElement>('.go'))?.click();
+    }
+  });
+}
+
 function tryExpandAll(): void {
   const expandBtn = document.querySelector<HTMLElement>(
     '[data-tooltip="Expand all"], [aria-label="Expand all"], button[title="Expand all"]'
@@ -81,7 +101,7 @@ function scrapeAttachments(msgEl: HTMLElement): Attachment[] {
 
 startReader({
   client: 'gmail', messageSelector: '[data-message-id]', bodySelector: '.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]',
-  threadId: getThreadId, subject: getSubject, currentUser: getCurrentUserEmail, expand: tryExpandAll,
+  threadId: getThreadId, subject: getSubject, currentUser: getCurrentUserEmail, expand: tryExpandAll, collapse: tryCollapseAll,
   snapshot(el, index, anchor, previous, bodyDirty, position = index): MessageSnapshot | null {
     const bodyEl = el.querySelector('.a3s.aiL, .a3s, .ii.gt > div, [data-message-text]');
     if (!bodyEl) return null;
