@@ -1,8 +1,15 @@
 import { embedImages, stripImages } from '../media/images';
+import { saveFile } from './download';
 import { maskThread } from './mask';
 import type { ThreadData } from '../../types';
 import { mergeMessages, participationBoundary } from '../../content/message-reconciliation';
 import { sanitizeEmailHtml } from '../../content/scraper-utils';
+
+/** A quoted attribution names an author without recording an address, and the parser has to
+ * invent one. Say that plainly rather than printing something that looks like a real address. */
+function address(email: string): string {
+  return email.includes('@') ? `&lt;${escape(email)}&gt;` : '<span class="meta">(address not recorded in the quoted history)</span>';
+}
 
 function escape(value: string): string {
   return value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
@@ -26,7 +33,7 @@ export function conversationHtml(thread: ThreadData, exportedAt = new Date(), op
     ).join('')}</ul><small>File contents are not embedded. Download attachments separately from ThreadLens or the original email.</small></aside>` : '';
     const variants = message.quotedVariants?.length ? `<details><summary>Quoted copy differs (${message.quotedVariants.length})</summary><p>A likely repeated quote has different wording. These copies are preserved for comparison.</p>${message.quotedVariants.map(variant => `<div class="email-body">${variant.bodyHtml ? sanitizeEmailHtml(variant.bodyHtml) : `<div class="plain">${escape(variant.body)}</div>`}</div>`).join('')}</details>` : '';
     const boundary = participation?.messageId === message.id ? `<section class="participation"><strong>${escape(participation.title)}</strong><p>${escape(participation.detail)}</p></section>` : '';
-    return `${boundary}<article aria-label="Message ${index + 1}"><header><strong>${escape(message.sender.name)}</strong> <span>&lt;${escape(message.sender.email)}&gt;</span><div class="meta">${escape(time)}${message.source === 'quoted' ? ' · Recovered from quoted history' : ''}${message.orderedByQuote ? ' · Placed by the quoted reply chain' : ''}${message.isCurrentUser ? ' · You' : ''}</div></header><div class="email-body">${body}</div>${message.quotedText ? `<details><summary>Additional quoted text</summary><div class="plain">${escape(message.quotedText)}</div></details>` : ''}${variants}${attachments}</article>`;
+    return `${boundary}<article aria-label="Message ${index + 1}"><header><strong>${escape(message.sender.name)}</strong> <span>${address(message.sender.email)}</span><div class="meta">${escape(time)}${message.source === 'quoted' ? ' · Recovered from quoted history' : ''}${message.orderedByQuote ? ' · Placed by the quoted reply chain' : ''}${message.isCurrentUser ? ' · You' : ''}</div></header><div class="email-body">${body}</div>${message.quotedText ? `<details><summary>Additional quoted text</summary><div class="plain">${escape(message.quotedText)}</div></details>` : ''}${variants}${attachments}</article>`;
   }).join('\n');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -34,7 +41,7 @@ export function conversationHtml(thread: ThreadData, exportedAt = new Date(), op
 <title>${escape(thread.subject)} — ThreadLens conversation</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f3f5f8;color:#172334;font:15px/1.6 system-ui,-apple-system,sans-serif}main{max-width:960px;margin:auto;padding:32px 20px}.overview{margin-bottom:24px}.participation{padding:16px;border:1px solid #b6cef0;background:#edf5ff;border-radius:10px}.masked-note{padding:14px 16px;border:1px solid #d9c08a;background:#fdf6e6;border-radius:10px;color:#5c4a1d;font-size:13px}h1{font-size:28px;line-height:1.2;overflow-wrap:anywhere}.meta,small{color:#526175;font-size:12px}.participants{overflow-wrap:anywhere}article{background:white;border:1px solid #d8e0ea;border-radius:12px;padding:20px;margin:16px 0;overflow-wrap:anywhere}article header{border-bottom:1px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px}article header span{color:#526175;font-size:13px}.email-body{overflow-x:auto}.email-body img{display:block;max-width:100%;height:auto;margin:12px 0}.email-body p{margin:.5em 0}.email-body table{border-collapse:collapse;max-width:100%;margin:12px 0}.email-body td,.email-body th{border:1px solid #cbd5e1;padding:6px 10px}.email-body blockquote{border-left:3px solid #cbd5e1;margin-left:0;padding-left:14px}.image-placeholder{display:inline-block;margin:6px 0;padding:4px 8px;border:1px dashed #a9b6c8;border-radius:6px;background:#eef2f7;color:#526175;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}.plain{white-space:pre-wrap}pre{overflow:auto;white-space:pre}a{color:#175bc1}aside,details{margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0}aside ul{padding-left:20px}footer{margin-top:24px}@media print{body{background:white}main{max-width:none;padding:0}article{border-radius:0;break-inside:auto}thead{display:table-header-group}tr{break-inside:avoid}.email-body{overflow:visible}}
-</style></head><body><main><section class="overview"><h1>${escape(thread.subject)}</h1><p>${messages.length} messages · ${participants.size} participants · ${escape(thread.client)}</p><p class="participants">${Array.from(participants.values()).map(sender => `${escape(sender.name)} &lt;${escape(sender.email)}&gt;`).join(' · ')}</p>${options.masked ? `<p class="masked-note"><strong>Identity-masked copy.</strong> ${escape(MASK_NOTICE)}</p>` : ''}<p class="meta">Exported ${escape(exportedAt.toLocaleString())}. Contains all messages currently recovered by ThreadLens, regardless of search or participant filters. Earlier history absent from the available emails cannot be recovered.${messages.some(message => message.timestampZoneUnknown) ? ' Some times were read from quoted text, which records no timezone, and can be offset from the original send time.' : ''}${messages.some(message => message.orderedByQuote) ? ' Messages marked "Placed by the quoted reply chain" sit where the quoting nested them, which is the real reply order even though their clocks were read in different timezones.' : ''}</p></section>${articles}<footer class="meta">Exported locally by ThreadLens. Attachment names are listed; file contents are not embedded.${options.masked ? ' Identities in this copy are placeholders, not the real correspondents.' : ''}</footer></main></body></html>`;
+</style></head><body><main><section class="overview"><h1>${escape(thread.subject)}</h1><p>${messages.length} messages · ${participants.size} participants · ${escape(thread.client)}</p><p class="participants">${Array.from(participants.values()).map(sender => `${escape(sender.name)} ${address(sender.email)}`).join(' · ')}</p>${options.masked ? `<p class="masked-note"><strong>Identity-masked copy.</strong> ${escape(MASK_NOTICE)}</p>` : ''}<p class="meta">Exported ${escape(exportedAt.toLocaleString())}. Contains all messages currently recovered by ThreadLens, regardless of search or participant filters. Earlier history absent from the available emails cannot be recovered.${messages.some(message => message.timestampZoneUnknown) ? ' Some times were read from quoted text, which records no timezone, and can be offset from the original send time.' : ''}${messages.some(message => message.orderedByQuote) ? ' Messages marked "Placed by the quoted reply chain" sit where the quoting nested them, which is the real reply order even though their clocks were read in different timezones.' : ''}</p></section>${articles}<footer class="meta">Exported locally by ThreadLens. Attachment names are listed; file contents are not embedded.${options.masked ? ' Identities in this copy are placeholders, not the real correspondents.' : ''}</footer></main></body></html>`;
 }
 
 export function conversationFilename(subject: string, date = new Date(), suffix = ''): string {
@@ -53,17 +60,7 @@ export async function downloadConversation(thread: ThreadData, options: { includ
   const source = options.mask ? maskThread(thread) : thread;
   const html = conversationHtml(source, date, { masked: options.mask });
   const exported = includeImages ? await embedImages(html, source.sourceTabId) : { html: stripImages(html).html, missing: 0 };
-  const blob = new Blob([exported.html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  try {
-    link.href = url;
-    link.download = conversationFilename(source.subject, date, options.mask ? 'masked' : includeImages ? '' : 'no-images');
-    document.body.append(link);
-    link.click();
-  } finally {
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  }
+  saveFile(conversationFilename(source.subject, date, options.mask ? 'masked' : includeImages ? '' : 'no-images'),
+    new Blob([exported.html], { type: 'text/html;charset=utf-8' }));
   return exported.missing;
 }

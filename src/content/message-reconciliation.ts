@@ -1,8 +1,9 @@
 import type { ParsedMessage, Sender, ThreadData } from '../types';
+import { buildSender } from './scraper-utils';
 
 /** Providers rewrite the same picture's address in every copy, so compare what
  * survives that: the proxied original, a data payload, or a content id. */
-function imageKeys(html = ''): string[] {
+export function imageKeys(html = ''): string[] {
   return (html.match(/<img\b[^>]*>/gi) ?? []).map(tag => {
     const raw = tag.match(/(?:src|data-tl-image-src)="([^"]*)"/i)?.[1] ?? '';
     const proxied = /#(https?:\/\/[^"\s]+)$/.exec(raw)?.[1];
@@ -445,12 +446,82 @@ function sequence(messages: ParsedMessage[], edges: [number, number][]): ParsedM
   return sorted;
 }
 
+/**
+ * One person, one identity.
+ *
+ * A quoted attribution routinely names an author without recording an address —
+ * "On 13 Aug 2026, Sarah Jones wrote:" — so the parser has to invent one, and
+ * the same colleague reaches the thread twice: once as the address their own
+ * emails carry, and once as a name with no address. Nothing merges the two,
+ * because they are different messages by the same person rather than copies of
+ * one, so the panel lists them as two participants in two colours and the
+ * conversation looks like it has more people in it than it does.
+ *
+ * A name-only sender is therefore resolved onto the address the thread itself
+ * shows for that name: an address they have written from, on the evidence
+ * `sameAuthor` already trusts for matching — the same name, or the local part
+ * of the address written as a name — or an address the thread's own To and Cc
+ * lines carry for it, or, for a lone first name, the one person in the thread
+ * whose name or address opens with it. Nothing is guessed. A name that fits two
+ * different addresses, and a name too short or too generic to identify anybody
+ * — "DJ", "Unknown" — keeps the identity the parser gave it, because inventing
+ * a link between two colleagues would be worse than showing one twice. Only the
+ * identity is resolved: which messages are copies of one another is decided by
+ * the same evidence as before.
+ */
+function resolveNamedSenders(messages: ParsedMessage[]): ParsedMessage[] {
+  if (!messages.some(message => !message.sender.email.includes('@'))) return messages;
+  const localKey = (email: string) => email.split('@')[0].replace(/[^a-z0-9]+/g, '');
+  const firstToken = (value: string) => value.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)[0] ?? '';
+  // null marks a key that fits more than one person, which resolves to nobody.
+  const strong = new Map<string, string | null>();
+  const weak = new Map<string, string | null>();
+  const identities = new Map<string, Sender>();
+  const you = new Map<string, boolean>();
+  function remember(map: Map<string, string | null>, key: string, address: string) {
+    if (key.length < 4) return;
+    const known = map.get(key);
+    if (known === undefined) map.set(key, address);
+    else if (known !== null && known !== address) map.set(key, null);
+  }
+  function learn(address: string, name: string) {
+    if (!address.includes('@')) return;
+    remember(strong, localKey(address), address);
+    remember(weak, firstToken(address), address);
+    if (name) { remember(strong, name.toLowerCase().replace(/[^a-z0-9]+/g, ''), address); remember(weak, firstToken(name), address); }
+  }
+  for (const message of messages) {
+    const sender = message.sender;
+    // An address in a To or Cc line names its owner as surely as a sent email does.
+    for (const recipient of message.recipients ?? []) learn(recipient, '');
+    if (!sender.email.includes('@')) continue;
+    if (!identities.has(sender.email)) identities.set(sender.email, sender);
+    learn(sender.email, specificName(sender));
+    you.set(sender.email, (you.get(sender.email) ?? false) || message.isCurrentUser);
+  }
+  const pick = (key: string) => (key.length >= 4 ? strong.get(key) ?? weak.get(key) ?? undefined : undefined);
+  return messages.map(message => {
+    if (message.sender.email.includes('@')) return message;
+    const name = specificName(message.sender);
+    if (!name) return message;
+    // A full name must match a full name or a whole address. Only a lone first
+    // name may match the opening of one, because "Sarah Jones" and "Sarah
+    // Connor" are two people while "Sarah" among them is a reference to one.
+    const tokens = message.sender.name.trim().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    const address = pick(name) ?? (tokens.length === 1 ? pick(firstToken(message.sender.name)) : undefined);
+    if (!address) return message;
+    const sender = identities.get(address) ?? buildSender(message.sender.name, address);
+    // The same person is the same person throughout, including whether it is the reader.
+    return { ...message, sender, isCurrentUser: you.get(sender.email) ?? message.isCurrentUser };
+  });
+}
+
 export function mergeMessages(messages: ParsedMessage[]): ParsedMessage[] {
   const voted = votedOffsets(messages);
   const first = reconcile(messages, voted);
   // An offset proven by a long duplicate also resolves the shorter copies.
   const merged = first.observed.length ? reconcile(messages, [...voted, ...first.observed]) : first;
-  return sequence(placeUnread(merged.result), chainEdges(messages, merged.place));
+  return resolveNamedSenders(sequence(placeUnread(merged.result), chainEdges(messages, merged.place)));
 }
 
 export function participationBoundary(messages: ParsedMessage[], currentUserEmail = ''): ThreadData['participation'] {

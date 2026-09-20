@@ -1,4 +1,4 @@
-# ThreadLens 1.6.3
+# ThreadLens 1.7.2
 
 A local Chrome extension that displays long Gmail and Outlook email conversations as chronological chat messages. Included quoted history is split into individual messages, including when you join a conversation midway.
 
@@ -12,9 +12,19 @@ A local Chrome extension that displays long Gmail and Outlook email conversation
 
 The ZIP in `releases/threadlens-1.6.3.zip` contains the same build. Extract it first and select the extracted directory containing `manifest.json`. Do not select the project root, which contains source-code paths.
 
-## Expansion stability in 1.6.3
+## A shorter panel in 1.7.2
 
-Opening an email already represented in quoted history now reconciles image filename/alt differences without adding duplicate messages. Formatting-only and provider-clipped copies no longer create a redundant “Quoted copy differs” section. Fuller text and available images are retained; actual wording, signature and identifiable image changes remain inspectable.
+The picture-embedding download is gone — the text-only and masked copies remain, and neither writes picture bytes. **Read collapsed emails** now has an opposite, **Collapse emails again**, which puts the mailbox back as you found it; everything ThreadLens has already recovered stays in the panel whether or not Gmail is still showing it. A long thread also gets two round buttons at the bottom of the chat, as a messaging app does: ↑ jumps to the first message and ↓ to the latest, each appearing only when there is somewhere to go. `Home` and `End` do the same from the keyboard.
+
+## One person, one identity in 1.7.1
+
+A quoted attribution names its author but usually records no address, so ThreadLens had to invent one — and the same colleague appeared twice in the participant bar, in two colours, once under their address and once under their name alone. A name-only author is now given the address the thread itself shows for that name: one they have written from, one the To and Cc lines carry for them, or, for a lone first name, the one person in the thread who has it. Where the thread offers no such evidence — a nickname like "DJ", or an author it never addresses — they are still shown as themselves rather than linked to somebody who might not be them. Masked copies keep the same grouping, and no longer invent an address for an author who never gave one.
+
+## Reporting a parsing problem in 1.7.0
+
+Some conversations only go wrong in a real mailbox, and the exported conversation cannot show why: by then the provider's own markup — the thing ThreadLens actually reads — is gone. **Report a parsing problem**, under the export buttons, saves that markup instead, masked so it can be sent to whoever is diagnosing the problem. Before either file is written the two copies are parsed and compared, and the answer is written into the file and shown in the panel, so nobody has to assume the masked copy still reproduces the problem. See [Report a parsing problem](#report-a-parsing-problem).
+
+Expansion stability from 1.6.3 is unchanged: opening an email already represented in quoted history reconciles image filename/alt differences without adding duplicate messages, and formatting-only or provider-clipped copies do not create a redundant “Quoted copy differs” section.
 
 Refresh Gmail after reloading the extension and export again. Existing downloaded HTML files remain unchanged. Expanding an email can still reveal previously unavailable history or refine an estimated date.
 
@@ -66,15 +76,38 @@ When a thread is forwarded or replied to without any new words, ThreadLens says 
 
 ## Download an entire conversation
 
-Click **Download conversation (.html)** under the subject in the side panel. The single standalone HTML file opens in a browser and preserves message order, sender names/addresses, timestamps, tables, lists and text formatting. It includes all recovered messages even when search or a participant filter is active. Available inline raster images are embedded for offline viewing (8 MB per fetched image, 50 MB of encoded image data per export). If embedding fails, the file visibly identifies the image and retains its HTTPS source when available. Attachment names are listed; separate attachment file bytes and provider download URLs are not embedded. Use the attachment buttons to download files separately. You can also print the HTML from your browser.
-
-**Text only (no images)** next to it writes the same conversation with no image or attachment data at all: every inline image becomes a placeholder naming the file, such as `image-1.png` or the source's own `chart-q4.png`, and no provider URLs are written. The file is a few kilobytes instead of megabytes, opens identically offline, and is the copy to use for testing or for sharing a thread's structure without its pictures. It is saved as `ThreadLens-<subject>-<date>-no-images.html`.
+Click **Text only (no images)** under the subject in the side panel. The single standalone HTML file opens in a browser and preserves message order, sender names/addresses, timestamps, tables, lists and text formatting. It includes all recovered messages even when search or a participant filter is active. No image or attachment data is written: every inline image becomes a placeholder naming the file, such as `image-1.png` or the source's own `chart-q4.png`, and no provider URLs are written. The file is a few kilobytes rather than megabytes, opens identically offline, and is saved as `ThreadLens-<subject>-<date>-no-images.html`. Attachment names are listed; use the attachment buttons to download the files themselves. You can also print the HTML from your browser.
 
 **Masked copy (share-safe)** writes the same conversation with the identities removed, for handing a thread to someone who is helping you diagnose a parsing problem. Every email address, sender name, name mentioned in a body or signature, company domain, phone number, long reference number, link address, attachment name and internal message id is replaced by a numbered placeholder — `Person 1`, `person1@company1.example`, `Company 2`, `[phone-1]` — and the same real value always becomes the same placeholder, so reply chains, duplicate quotes, who answered whom and who joined when all still read correctly. A capitalised short form of a known name is masked too — `Sid` for Siddharth, `Elevation` for elevationservices.co.uk, and `WarehousePartners` written as one word in a filename — while ordinary lowercase words such as "the car park" are left alone. Consumer mail hosts such as `gmail.com` stay readable because they identify nobody.
 
 Message wording, formatting, tables, order, timestamps, recovery labels and quoted variants are **unchanged**, so the masked file still reproduces the problem it was exported for. No image is included — a picture can show a face, a signature or a letterhead — each one becoming a positioned `image-1.png` placeholder instead, and no attachment bytes or provider URLs are written. The placeholder-to-person map exists only while the file is being written and is never stored in it, so nobody can reverse the file back to the real people. The copy is saved as `ThreadLens-<subject>-<date>-masked.html` and the file itself says it is masked.
 
 Masking is a strong default, not a guarantee: a nickname that shares no opening letters with the real name, an identity written only inside a picture, and a company named in prose but never in an address or domain can survive. Open the file and read it before sending it anywhere.
+
+## Report a parsing problem
+
+A masked conversation shows what ThreadLens produced. When the problem is in what it *read* — an email split in the wrong place, one email shown twice, a message that never appears, a date read from the wrong element — the evidence is the mail page's own markup, and the conversation export no longer contains it. Open **Report a parsing problem** under the export buttons for two more downloads:
+
+- **Thread source (masked)** — the provider's markup for every email in the thread, with every identity replaced exactly as in the masked conversation. This is the file to send. It is saved as `ThreadLens-<subject>-<date>-source-masked.json`.
+- **Thread source (original, private)** — the same file with the real names and addresses still in it. Keep it locally to see what the masked copy replaced. Do not send it.
+
+Each entry holds the whole provider container — header row, date cell, recipient chips, attachment chips — and, separately, the exact snapshot the parser received for that email, so a scraping problem and a parsing problem can be told apart. A collapsed row that renders no body is recorded as headers only and says so. Inline picture bytes are never written: each payload is folded to a short digest that keeps "the same picture" and "a different picture" telling apart exactly as they did, and blob, proxy, `cid:` and ordinary addresses each keep their own kind of placeholder, because reconciliation reads those differences when deciding whether two copies are one email.
+
+**Both copies are always parsed and compared before either is saved.** Masking shortens names, and reconciliation weighs how much text two copies share, so a masked copy is not assumed to behave like the original — it is checked. The panel reports the result, and the file records it:
+
+> The masked copy parses to the same 21 message(s) as the original, with the same order, clocks, quote links and pictures.
+
+If the two disagree, the file lists exactly which message and which field moved, and the panel says to send the original as well if that is possible. The thread is also read twice — whole, and in batches the way a mailbox delivers it — because a difference between those two is a parsing problem in itself.
+
+To read a capture back without a browser or a mailbox:
+
+```sh
+npm run replay -- ThreadLens-<subject>-<date>-source-masked.json
+```
+
+It prints what the parser makes of the file: how many containers were captured, how many messages came out, whether reading it whole and in batches agree, and one line per message with its sender, clock, variants and attachments. `artifacts/thread-source-capture.json` is a synthetic example of the format.
+
+Everything is written by the panel itself — no upload, no network, no extension download permission.
 
 ## Building a release
 
@@ -114,7 +147,7 @@ Optional full extension smoke test, with an available Playwright installation an
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
 ```
 
-The parser suite has **150 passing checks**, including a 40-message case. The browser smoke tests extraction, table rendering, rich search, attachment persistence/download/removal and tab navigation. See **TEST_COVERAGE.md** for the covered cases, and **CONTEXT.md** for architecture, implementation decisions, limitations and next checks.
+The parser suite has **243 passing checks**, including a 40-message case and a five-person capture read back through the real reader, parser and masker. The browser smoke tests extraction, table rendering, rich search, attachment persistence/download/removal and tab navigation. See **TEST_COVERAGE.md** for the covered cases, and **CONTEXT.md** for architecture, implementation decisions, limitations and next checks.
 
 ## Recreate release downloads after cloning
 
@@ -122,7 +155,7 @@ The generated `dist/` and `releases/` directories are intentionally ignored by G
 
 ## Image availability and performance
 
-Refresh the original mail tab after reloading the extension, then export again. Exports created before 1.4.0 contain text placeholders without image bytes or URLs and cannot restore those pictures. Images removed by the sender, unresolved `cid:` references, expired links or inaccessible provider resources remain visibly unavailable. Gmail's actual proxy URLs and images exposed as source-tab blobs are supported; images remain in position without splitting the message. Click an image to view its full dimensions.
+Refresh the original mail tab after reloading the extension, then export again. Pictures are shown in the panel, at full size when clicked; exports name them rather than carrying them, so an exported file holds no picture bytes or provider URLs. Images removed by the sender, unresolved `cid:` references, expired links or inaccessible provider resources remain visibly unavailable. Gmail's actual proxy URLs and images exposed as source-tab blobs are supported; images remain in position without splitting the message. Click an image to view its full dimensions.
 
 Parsing runs in an inert offscreen extension document. The mail page captures only new or changed messages in small idle batches, ignores unrelated toolbar/scroll mutations, and no longer automatically expands all Gmail messages. This reduces extension work on Gmail's main thread; it does not guarantee a particular live mailbox's frame rate. If older messages are missing because Gmail has not loaded their bodies, use **Read collapsed emails** (Gmail only).
 

@@ -1,6 +1,6 @@
 # Enterprise conversation test coverage
 
-Release 1.6.3. **200 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
+Release 1.7.2. **243 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
 
 | Area | Cases covered |
 |---|---|
@@ -24,6 +24,7 @@ Release 1.6.3. **200 automated tests** plus the real Chromium extension smoke te
 | No-images exports | Every image replaced by a filename, source URLs and image bytes absent, source-derived and generated names, alt text kept, image-free threads unchanged, filename suffix |
 | Inline images | Image-only, leading/trailing, between paragraphs, table-cell and quoted images; author ownership; live source overrides; blob references; unsafe/cid rejection; removed-image captions; differing images kept separate; export embedding/failure notices; raster/size checks |
 | Browser image flow | HTTPS and source-tab blob images render at full natural dimensions; full-size dialog; offline HTML embeds both sources; updates/replaced body nodes retain pictures |
+| Collapsing the mailbox | Only expanded emails clicked, Gmail's own Collapse all control preferred, the request reaching the adapter without re-reading the page or losing recovered messages |
 | Adapter stability | Gmail identity/date stable across edits; Outlook fallback IDs stable; nested Outlook wrappers produce one message |
 | Performance | Synthetic 40-message ~1 MB benchmark; no automatic expand-all; unrelated toolbar/scroll mutations cause zero additional snapshots; a body edit snapshots only its owning message |
 | Deep quote nesting | Eight-level Outlook indentation recovered without rebuilt quote wrappers, an author's own quotation kept, empty quote shells dropped innermost-first |
@@ -34,6 +35,10 @@ Release 1.6.3. **200 automated tests** plus the real Chromium extension smoke te
 | Reply order | An answer whose zoneless clock reads earlier than the question it quotes is shown after it, both marked as chain-placed |
 | Forwarding | A carrier naming who passed the thread on and to whom, a long recipient list abbreviated, no recipients readable, and an email that did add words kept as an ordinary message |
 | Masked exports | One placeholder per person across headers, bodies, signatures, recipients and quoted variants; body-only addresses; employer domains; capitalised short names masked while lowercase words are kept; dates, quantities and reference numbers protected from the phone heuristic; renumbered ids keeping their references; no image bytes, attachment URLs or mail-tab reference; preserved wording, tables, order, timestamps and recovery labels; masked filename |
+| Participant identity | A name-only quoted author resolved to an address they sent from (either order), to a provider address with no display name, to a To/Cc address, and — for a lone first name — to the one person who has it; the reader recognised under both identities; two people sharing a name, a first name shared by two, a full name against a partial match, and a two-letter nickname all left alone; identity resolved without merging distinct messages; stable across repeated reconciliation; one participant chip, one colour and one message count through the cache; masked copies keeping the unaddressed shape, one placeholder per person, and the same grouping |
+| Thread-source capture | One entry per provider container with the snapshot the parser received; collapsed rows kept as headers with a note; provider classes, ids, clocks, recipient rows and attachment chips retained; oversized containers shortened and reported; picture payloads folded stably out of both the snapshot and the container markup |
+| Capture fidelity | A capture replays to exactly the thread the extension produced, before and after an older email is opened; whole and batched reads agree; a masked capture parses to the same shape as its original; a masked copy that would lose a message is reported with the message and field that moved |
+| Masked captures | No name, address, domain, phone number, provider id or picture payload survives; display names learned before any markup is rewritten, so two copies of one email mask alike; calendar words never learned as identities; picture placeholders keep their kind (blob, proxy, proxied original, payload, cid, address with a varying query); masked containers read back into a page as the same conversation; masked source filename |
 | Extension integration | Real content script/service worker/panel flow, tab isolation, inbox clearing, no preload mismatch warnings, synthetic missing-year near-copy example, timezone-shifted quoted copy, forward-only receiving event |
 
 ## Commands
@@ -42,8 +47,11 @@ Release 1.6.3. **200 automated tests** plus the real Chromium extension smoke te
 npm test
 npm run typecheck
 npm run build
+npm run replay -- artifacts/thread-source-capture.json
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
 ```
+
+`npm run replay` reads a thread-source capture back through the real parser and prints the conversation it makes of it. The synthetic example above is written by the test suite; a capture from a real mailbox is read the same way.
 
 ## Not claimed as fully solved
 
@@ -52,4 +60,5 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
 - Arbitrary localized/custom headers and interleaved inline edits are not universally supported. Add an anonymized DOM fixture for each real failure.
 - A quote can be edited by its sender. Near-copy matching is intentionally narrow; variants remain inspectable, and ambiguous cases can still appear separately.
 - A quoted attribution line records no timezone. Where no provider header or confirmed offset resolves it, the displayed time is the quoted clock read as local and can be offset from the real send time; the panel and the export say so. Quote nesting still orders those messages correctly, but two messages that no chain relates — sibling forwards, or a direct email quoting neither — are ordered by clocks that may sit in different zones.
+- A thread-source capture holds only what the page held, with picture payloads folded to digests. It reproduces parsing and scraping, not the pixels of a picture, and its fidelity check proves that a masked copy parses alike — not that no identity survives in prose.
 - Live enterprise Gmail/Outlook selectors and provider authentication must be verified in the user's tenant. Synthetic Chromium testing is not a live-mailbox certification.

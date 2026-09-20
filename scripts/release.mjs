@@ -3,45 +3,13 @@
  *
  * Runs the whole gate in order — typecheck, tests, production build, then the
  * packager — and leaves both a ZIP and an already-extracted folder in
- * releases/. Vitest needs Node 22, and this machine's default node is older,
- * so the runner finds an installed Node 22 through nvm and re-runs itself on
- * it rather than failing halfway through with a module error.
+ * releases/.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { requireNode22 } from './node22.mjs';
 
-const REQUIRED_MAJOR = 22;
-const self = fileURLToPath(import.meta.url);
-const major = Number(process.versions.node.split('.')[0]);
-
-/** The newest installed Node that is new enough, as nvm lays them out. */
-function nvmNode() {
-  const root = join(process.env.NVM_DIR || join(homedir(), '.nvm'), 'versions', 'node');
-  if (!existsSync(root)) return '';
-  const usable = readdirSync(root)
-    .filter(name => Number(name.replace(/^v/, '').split('.')[0]) >= REQUIRED_MAJOR)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  const newest = usable.pop();
-  const binary = newest && join(root, newest, 'bin', 'node');
-  return binary && existsSync(binary) ? binary : '';
-}
-
-if (major < REQUIRED_MAJOR) {
-  const binary = nvmNode();
-  if (!binary) {
-    console.error(`\nThis release needs Node ${REQUIRED_MAJOR} or newer; this shell has ${process.versions.node}.`);
-    console.error(`Install one with "nvm install ${REQUIRED_MAJOR}", or run "nvm use ${REQUIRED_MAJOR}" before npm run release.\n`);
-    process.exit(1);
-  }
-  console.log(`Node ${process.versions.node} is too old for the test runner; using ${binary}.`);
-  // npm and vitest are started as child processes, so the whole run needs that
-  // Node ahead of the inherited PATH, not only this script.
-  const path = `${join(binary, '..')}${delimiter}${process.env.PATH ?? ''}`;
-  process.exit(spawnSync(binary, [self, ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, PATH: path } }).status ?? 1);
-}
+requireNode22(fileURLToPath(import.meta.url), 'npm run release');
 
 const steps = [
   ['Typecheck', 'npm', ['run', '--silent', 'typecheck']],

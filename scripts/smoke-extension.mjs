@@ -27,7 +27,7 @@ try {
   const localClock = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   const carolBody = '<p>Adding you for visibility.</p><p>The rollout covers the northern region first, and the budget table below is the version finance agreed last week. Please raise anything that looks wrong before Friday.</p>';
   const history = quote('Alice', 'Sep 7, 2026', '<p>Budget approved.</p><table><tr><th>Item</th><th>Budget</th></tr><tr><td>Hosting</td><td>$500</td></tr></table>' + quote('Bob', 'Sep 6, 2026', '<p>Initial proposal.</p>'));
-  const html = `<main role="main"><span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Enterprise rollout · joined midway</h2><div data-message-id="direct-1"><span class="gD" email="carol@example.com" name="Carol">Carol</span><span class="g2" email="new@example.com"></span><span class="g3" data-tooltip="2026-09-08T10:00:00Z"></span><div class="a3s aiL">${carolBody}<div hidden style="display:none">${history}</div></div><div class="aZo" data-tooltip="report.txt"><span class="aV3">report.txt</span><span class="aV7">12 B</span><a href="https://mail.google.com/mail/u/0/?view=att&amp;attid=1">Download</a></div></div><div data-message-id="direct-2"><span class="gD" email="dave@example.com" name="Dave">Dave</span><span class="g3" data-tooltip="2026-09-09T10:00:00Z"></span><div class="a3s aiL"><p>OK</p>${attribution('Carol', localClock(carolSentAt - 4.5 * 3600 * 1000), carolBody + history)}</div></div></main>`;
+  const html = `<main role="main"><span data-ogsr-up><span data-email="new@example.com"></span></span><h2 class="hP">Enterprise rollout · joined midway</h2><div data-message-id="direct-1"><div class="gE"></div><span class="gD" email="carol@example.com" name="Carol">Carol</span><span class="g2" email="new@example.com"></span><span class="g3" data-tooltip="2026-09-08T10:00:00Z"></span><div class="a3s aiL">${carolBody}<div hidden style="display:none">${history}</div></div><div class="aZo" data-tooltip="report.txt"><span class="aV3">report.txt</span><span class="aV7">12 B</span><a href="https://mail.google.com/mail/u/0/?view=att&amp;attid=1">Download</a></div></div><div data-message-id="direct-2"><div class="gE"></div><span class="gD" email="dave@example.com" name="Dave">Dave</span><span class="g3" data-tooltip="2026-09-09T10:00:00Z"></span><div class="a3s aiL"><p>OK</p>${attribution('Carol', localClock(carolSentAt - 4.5 * 3600 * 1000), carolBody + history)}</div></div></main>`;
   await context.route('https://mail.google.com/**', route => route.fulfill(route.request().url().includes('view=att') ? { contentType: 'text/plain', body: 'Report data' } : { contentType: 'text/html; charset=utf-8', body: html }));
   await context.route('https://mail.google.com/inline-test.png', route => route.fulfill({ contentType: 'image/png', body: imageBytes }));
   const mail = await context.newPage();
@@ -56,9 +56,9 @@ try {
   assert.equal(await panel.locator('table mark').innerText(), 'Hosting');
   const [conversation] = await Promise.all([
     panel.waitForEvent('download'),
-    panel.getByRole('button', { name: 'Download conversation (.html)' }).click(),
+    panel.getByRole('button', { name: 'Text only (no images)' }).click(),
   ]);
-  assert.ok(conversation.suggestedFilename().endsWith('.html'));
+  assert.ok(conversation.suggestedFilename().endsWith('-no-images.html'));
   await mkdir('artifacts', { recursive: true });
   const exportPath = resolve('artifacts/conversation-export.html');
   await conversation.saveAs(exportPath);
@@ -80,6 +80,26 @@ try {
   assert.ok(masked.includes('&lt;person1@example.com&gt;'), 'senders become numbered placeholders');
   assert.ok(masked.includes('Budget approved.') && masked.includes('<table>'), 'wording and structure survive masking');
   assert.ok(!masked.includes('<img'), 'a masked copy writes no image data');
+  // The thread-source capture: the mail page's own markup, masked, and checked
+  // against the original before it is written.
+  await panel.getByText('Report a parsing problem', { exact: true }).click();
+  const [sourceExport] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name: 'Thread source (masked)' }).click()]);
+  assert.ok(sourceExport.suggestedFilename().endsWith('-source-masked.json'), 'the capture is named as a masked source file');
+  const sourcePath = resolve('artifacts/thread-source-masked.json');
+  await sourceExport.saveAs(sourcePath);
+  const capture = JSON.parse(await readFile(sourcePath, 'utf8'));
+  assert.equal(capture.masked, true);
+  assert.equal(capture.client, 'gmail');
+  assert.equal(capture.messages.length, 2, 'both provider containers are captured');
+  assert.ok(capture.messages.every(message => message.snapshot && message.live), 'the capture holds the snapshots the parser received');
+  assert.ok(capture.messages[0].containerHtml.includes('class="a3s aiL"'), 'the provider markup a scraper reads survives masking');
+  assert.equal(capture.fidelity.sameStructure, true, 'the masked capture must parse to the same thread as the original');
+  assert.equal(capture.fidelity.orderIndependent, true);
+  assert.equal(capture.fidelity.originalMessages, 4);
+  for (const identity of ['Carol', 'Dave', 'Alice', 'Bob', 'carol@', 'dave@', 'alice@', 'bob@'])
+    assert.ok(!JSON.stringify(capture).includes(identity), `thread-source capture leaks ${identity}`);
+  await panel.getByText('parses to the same 4 message(s)', { exact: false }).waitFor();
+  await panel.getByText('Report a parsing problem', { exact: true }).click();
   await panel.locator('input[type="text"], input[type="search"]').fill('');
   await panel.getByText('Save locally', { exact: true }).click();
   await panel.getByText('Saved on this device', { exact: true }).waitFor();
@@ -95,6 +115,20 @@ try {
   await panel.getByText('Remove local copy', { exact: true }).click();
   await panel.getByText('Choose downloaded file', { exact: true }).waitFor();
   assert.equal(await panel.getByText('Saved on this device', { exact: true }).count(), 0);
+  // Both ends of a long thread are one tap away.
+  await panel.getByRole('button', { name: 'Jump to the first message' }).click();
+  await panel.waitForFunction(() => document.querySelector('.overflow-y-auto').scrollTop === 0);
+  await panel.getByRole('button', { name: 'Jump to the latest message' }).click();
+  await panel.waitForFunction(() => { const el = document.querySelector('.overflow-y-auto'); return el.scrollHeight - el.clientHeight - el.scrollTop < 40; });
+  // Expanding has an opposite. Gmail's header row toggles a message, so the
+  // fixture does too, and the panel must keep every email it already recovered
+  // after the mailbox stops showing them.
+  await mail.evaluate(() => document.querySelectorAll('.gE').forEach(header =>
+    header.addEventListener('click', () => header.closest('[data-message-id]').querySelector('.a3s')?.remove())));
+  await panel.getByRole('button', { name: 'Collapse emails again' }).click();
+  await mail.waitForFunction(() => document.querySelectorAll('.a3s').length === 0);
+  await panel.getByText('4 messages', { exact: true }).waitFor();
+  assert.equal(await panel.getByText('Initial proposal.', { exact: true }).count(), 1, 'collapsing the mailbox keeps the recovered history');
   await mkdir('artifacts', { recursive: true });
   await panel.screenshot({ path: 'artifacts/threadlens-smoke.png', fullPage: true });
   const unrelated = await context.newPage();
@@ -112,7 +146,7 @@ try {
   await panel.getByText('Quoted copy differs (1)', { exact: true }).click();
   await panel.getByText('You joined here · first visible inclusion', { exact: true }).waitFor();
   assert.ok(await panel.getByText('Updated signature', { exact: true }).isVisible());
-  const [deduplicatedExport] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name: 'Download conversation (.html)' }).click()]);
+  const [deduplicatedExport] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name: 'Text only (no images)' }).click()]);
   const deduplicatedPath = resolve('artifacts/enterprise-export.html');
   await deduplicatedExport.saveAs(deduplicatedPath);
   const deduplicatedHtml = await readFile(deduplicatedPath, 'utf8');
@@ -163,19 +197,20 @@ try {
   });
   await panel.getByText('Replacement body keeps both images.', { exact: true }).waitFor();
   await panel.screenshot({ path: 'artifacts/inline-images.png', fullPage: true });
-  const [imageDownload] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name: 'Download conversation (.html)' }).click()]);
+  const [imageDownload] = await Promise.all([panel.waitForEvent('download'), panel.getByRole('button', { name: 'Text only (no images)' }).click()]);
   const imageExportPath = resolve('artifacts/inline-images.html');
   await imageDownload.saveAs(imageExportPath);
   const imageExport = await readFile(imageExportPath, 'utf8');
-  assert.equal((imageExport.match(/src="data:image\/png;base64,/g) || []).length, 2);
-  assert.ok(!imageExport.includes('Image not embedded'));
+  // Every export is now the small one: pictures keep their place and their name,
+  // and no picture bytes or provider addresses are written.
+  assert.ok(!imageExport.includes('<img'), 'the export writes no pictures');
+  assert.ok(!imageExport.includes('data:image/png;base64,'), 'the export writes no picture bytes');
+  assert.equal((imageExport.match(/class="image-placeholder"/g) || []).length, 2, 'both pictures keep their place');
+  for (const alt of ['Original chart', 'Current chart']) assert.ok(imageExport.includes(alt), `the export keeps the ${alt} caption`);
   const offlineImages = await context.newPage();
   await offlineImages.route('https://**/*', route => route.abort());
   await offlineImages.goto(pathToFileURL(imageExportPath).href);
-  for (const alt of ['Original chart', 'Current chart']) {
-    await offlineImages.getByAltText(alt).scrollIntoViewIfNeeded();
-    await offlineImages.waitForFunction(alt => Array.from(document.images).some(img => img.alt === alt && img.naturalWidth === 960), alt);
-  }
+  await offlineImages.getByText('Original chart', { exact: false }).first().waitFor();
   await offlineImages.screenshot({ path: 'artifacts/inline-images-export.png', fullPage: true });
   await offlineImages.close();
   await worker.evaluate(tabId => chrome.tabs.update(tabId, { active: true }), mailTabId);
@@ -238,5 +273,5 @@ try {
   await exportedPage.screenshot({ path: 'artifacts/conversation-export.png', fullPage: true });
   assert.deepEqual(errors, []);
   assert.ok(!panelLogs.some(text => text.includes('cross-world extension resource mismatch')), 'no cross-world preload warnings');
-  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone full-conversation export during search, identity-masked export, table, rich search, local file save/reload/download/remove, HTTPS/blob inline images, full-size viewer, offline embedded images, incremental body updates/replacement, stable five-person expansion with images, navigation clearing; no page errors or cross-world preload warnings.');
+  console.log('PASS: real extension extraction, duplicate reconciliation, joined-midway and forward-only markers, four-message history, standalone text-only conversation export during search, identity-masked export, masked thread-source capture checked against the original, table, rich search, local file save/reload/download/remove, HTTPS/blob inline images, full-size viewer, named picture placeholders in exports, collapsing the mailbox again, jumping to both ends of the thread, incremental body updates/replacement, stable five-person expansion with images, navigation clearing; no page errors or cross-world preload warnings.');
 } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }

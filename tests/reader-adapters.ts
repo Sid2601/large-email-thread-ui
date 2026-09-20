@@ -59,3 +59,20 @@ it('prefers an Outlook item\'s own time element over its neighbours', () => {
   expect(snapshot.message.timestampEstimated).toBeFalsy();
   expect(snapshot.message.index).toBe(4);
 });
+it('collapses the emails Gmail has expanded, and never clicks a collapsed one open', () => {
+  document.body.innerHTML = '<div data-message-id="open"><div class="gE"></div><div class="a3s">Body</div></div>'
+    + '<div data-message-id="shut"><div class="gE"></div></div>';
+  const clicked: string[] = [];
+  document.querySelectorAll<HTMLElement>('[data-message-id]').forEach(container =>
+    container.querySelector('.gE')!.addEventListener('click', () => clicked.push(container.getAttribute('data-message-id')!)));
+  gmail.collapse!();
+  expect(clicked).toEqual(['open']);
+});
+it("uses Gmail's own control when the mailbox offers one", () => {
+  document.body.innerHTML = '<div data-tooltip="Collapse all"></div><div data-message-id="open"><div class="gE"></div><div class="a3s">Body</div></div>';
+  const clicked: string[] = [];
+  document.querySelector('[data-tooltip="Collapse all"]')!.addEventListener('click', () => clicked.push('all'));
+  document.querySelector('.gE')!.addEventListener('click', () => clicked.push('header'));
+  gmail.collapse!();
+  expect(clicked).toEqual(['all']);
+});

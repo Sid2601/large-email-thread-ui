@@ -1,6 +1,14 @@
+import { SNAPSHOT_BATCH_LIMIT } from '../shared/snapshots';
 import type { MessageSnapshot, SnapshotBatch } from '../shared/snapshots';
 import type { ThreadData } from '../types';
 import { imageResponse, safeImageSource } from '../shared/images';
+import { CAPTURE_FORMAT, foldImages, foldSnapshot } from '../shared/capture';
+import type { CapturedMessage, ThreadCapture } from '../shared/capture';
+
+/** A capture is a diagnostic file, not a mailbox copy: one provider container this
+ * large already holds far more than a parsing problem needs. */
+const CONTAINER_LIMIT = 512 * 1024;
+const CAPTURE_LIMIT = 16 * 1024 * 1024;
 
 export interface ReaderAdapter {
   client: ThreadData['client'];
@@ -13,6 +21,7 @@ export interface ReaderAdapter {
   /** `position` is the message's place in the mailbox's own order, which is authoritative when a clock cannot be read. */
   snapshot(el: HTMLElement, index: number, anchor: number, previous?: MessageSnapshot, bodyDirty?: boolean, position?: number): MessageSnapshot | null;
   expand?(): void;
+  collapse?(): void;
 }
 /** Only DOM snapshots run here. Parsing/reconciliation run in the extension document. */
 export function startReader(adapter: ReaderAdapter) {
@@ -70,7 +79,7 @@ export function startReader(adapter: ReaderAdapter) {
         if (previous && snapshot.html === previous.html && JSON.stringify(snapshot.message) === JSON.stringify(previous.message) && snapshot.imageSources.join('\n') === previous.imageSources.join('\n')) continue;
         known.set(el, snapshot); snapshots.push(snapshot); collected.push(el); stats.snapshots++;
         // Bound each IPC batch, including conversations with large quoted bodies.
-        if (snapshots.length >= 4) break;
+        if (snapshots.length >= SNAPSHOT_BATCH_LIMIT) break;
       }
       if (!snapshots.length || token !== revision) return;
       stats.batches++;
@@ -87,6 +96,49 @@ export function startReader(adapter: ReaderAdapter) {
       console.warn('[ThreadLens] Could not update thread:', error);
     }
     finally { running = false; if (dirty.size || requested) { requested = false; schedule(); } }
+  }
+  /**
+   * The thread exactly as this page holds it, for reproducing a parsing problem
+   * that only a real mailbox produces.
+   *
+   * Where the reader has already sent a message to the parser, that very
+   * snapshot is recorded rather than a fresh reading of the same element, so
+   * the capture is the parser's own input and not a second opinion about it.
+   * Alongside it goes the whole provider container — header rows, date cells,
+   * recipient chips, attachment chips — which is where a problem lives when the
+   * parsed body itself looks right. Picture bytes are folded to a digest: they
+   * are heavy, they can show a face, and every comparison that depends on them
+   * is preserved by the fold.
+   */
+  function capture(): ThreadCapture {
+    const notes: string[] = [];
+    let used = 0;
+    const messages: CapturedMessage[] = Array.from(document.querySelectorAll<HTMLElement>(adapter.messageSelector)).map((el, position) => {
+      const live = known.get(el);
+      const snapshot = live ?? adapter.snapshot(el, position, anchor, undefined, true, position) ?? null;
+      const folded = foldImages(el.outerHTML);
+      // The parser's own input is never dropped; the container markup around it
+      // yields first, so one enormous thread cannot outgrow a browser message.
+      used += snapshot ? snapshot.html.length : 0;
+      const room = Math.max(0, Math.min(CONTAINER_LIMIT, CAPTURE_LIMIT - used));
+      used += Math.min(folded.length, room);
+      return {
+        position, live: !!live, bodyFound: !!el.querySelector(adapter.bodySelector),
+        snapshot: snapshot && foldSnapshot(snapshot),
+        containerHtml: folded.slice(0, room), ...(folded.length > room ? { containerTruncated: true } : {}),
+      };
+    });
+    const truncated = messages.filter(message => message.containerTruncated).length;
+    if (truncated) notes.push(`${truncated} provider container(s) were shortened to keep the file readable; the parser input for each message is complete.`);
+    if (messages.some(message => !message.snapshot)) notes.push('Some rows render no body and are recorded as headers only; a collapsed email is not readable until it is opened.');
+    if (messages.some(message => !message.live)) notes.push('Some messages were read for this capture rather than taken from what the parser already received.');
+    return {
+      format: CAPTURE_FORMAT, appVersion: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'unknown',
+      masked: false, capturedAt: new Date().toISOString(), client: adapter.client,
+      threadId, subject: adapter.subject(), currentUserEmail: adapter.currentUser(), url: location.href,
+      messageSelector: adapter.messageSelector, bodySelector: adapter.bodySelector,
+      readerStats: { ...stats, pending: dirty.size }, messages, notes,
+    };
   }
   const observer = new MutationObserver(records => {
     if (navigation()) return;
@@ -120,7 +172,11 @@ export function startReader(adapter: ReaderAdapter) {
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if (message.type === 'SCRAPE_THREAD') { navigation(); discover(); schedule(); }
     if (message.type === 'EXPAND_THREAD') { adapter.expand?.(); discover(); schedule(); }
+    // Collapsing reveals nothing new, so nothing is re-read: the emails already
+    // recovered stay in the panel whether or not the page still shows them.
+    if (message.type === 'COLLAPSE_THREAD') { adapter.collapse?.(); }
     if (message.type === 'READER_STATS') { respond({ ...stats, pending: dirty.size }); }
+    if (message.type === 'CAPTURE_THREAD_SOURCE') { navigation(); respond(capture()); }
     if (message.type === 'READ_BLOB_IMAGE') {
       const url = safeImageSource(message.url ?? '');
       const included = url.startsWith(`blob:${location.origin}/`) && Array.from(document.querySelectorAll(adapter.bodySelector)).some(body =>
@@ -132,7 +188,7 @@ export function startReader(adapter: ReaderAdapter) {
     return false;
   });
   navigation();
-  return { stats, disconnect: () => { observer.disconnect(); if (timer) clearTimeout(timer); } };
+  return { stats, capture, disconnect: () => { observer.disconnect(); if (timer) clearTimeout(timer); } };
 }
 
 export function imageSources(body: Element): string[] {
