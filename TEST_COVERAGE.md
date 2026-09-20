@@ -1,9 +1,10 @@
 # Enterprise conversation test coverage
 
-Release 1.7.2. **243 automated tests** plus the real Chromium extension smoke test. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
+Release 1.7.3. **243 passing automated tests**, one optional capture-file test skipped without an input file, plus Chromium checks for both packages and the development extension. All committed cases are synthetic; the user's exported conversation was examined and replayed locally only.
 
 | Area | Cases covered |
 |---|---|
+| Build flavors | Production omits all export, diagnostic and attachment download/save/import controls and the capture endpoint; no attachment database is opened. Dev retains text/masked exports, both source captures and attachment persistence/download/removal. Both packaged builds retain images, tables, search, participation and Gmail controls. Packager checks emitted code and distinct names/paths. |
 | Standard replies | Gmail nested attribution, Outlook From/Sent/To/Subject, plain On/wrote text, Apple/mobile comma attribution, wrapped attribution, single messages, ordinary blockquotes, short replies |
 | Joining midway | 40 messages recovered from one nested chain; 40 unique messages recovered from the last five direct emails; earlier quoted history retained after direct expansion |
 | Forwarding | Forward with an introduction, pure forward, nested Outlook inside forward, mixed Gmail/Outlook, independent sibling forwards, new recipient later replying in the same conversation |
@@ -46,9 +47,11 @@ Release 1.7.2. **243 automated tests** plus the real Chromium extension smoke te
 ```sh
 npm test
 npm run typecheck
-npm run build
+npm run build:dev
 npm run replay -- artifacts/thread-source-capture.json
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/smoke-extension.mjs
+# After package:dev and package:prod:
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs npm run test:packages
 ```
 
 `npm run replay` reads a thread-source capture back through the real parser and prints the conversation it makes of it. The synthetic example above is written by the test suite; a capture from a real mailbox is read the same way.

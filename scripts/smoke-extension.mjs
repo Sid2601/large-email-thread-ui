@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import sharp from 'sharp';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const profile = await mkdtemp(join(tmpdir(), 'threadlens-smoke-'));
-const extension = resolve('dist');
+const extension = resolve(process.env.DEV_EXTENSION || 'dist-dev');
+assert.equal(JSON.parse(await readFile(join(extension, 'manifest.json'), 'utf8')).name, 'ThreadLens Dev', 'This smoke test exercises developer downloads; build:dev first.');
 assert.doesNotMatch(await readFile(join(extension, 'src/side-panel/index.html'), 'utf8'), /modulepreload/i, 'built panel must not preload cross-world shared extension modules');
 const context = await chromium.launchPersistentContext(profile, {
   channel: 'chromium', headless: true, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
@@ -115,11 +116,15 @@ try {
   await panel.getByText('Remove local copy', { exact: true }).click();
   await panel.getByText('Choose downloaded file', { exact: true }).waitFor();
   assert.equal(await panel.getByText('Saved on this device', { exact: true }).count(), 0);
-  // Both ends of a long thread are one tap away.
+  // Both ends of a long thread are one tap away. Make the fixture overflow
+  // and start at the bottom: the first-message button is hidden at the top.
+  await panel.setViewportSize({ width: 440, height: 600 });
+  await panel.locator('.overflow-y-auto').evaluate(el => { el.scrollTop = el.scrollHeight; });
   await panel.getByRole('button', { name: 'Jump to the first message' }).click();
   await panel.waitForFunction(() => document.querySelector('.overflow-y-auto').scrollTop === 0);
   await panel.getByRole('button', { name: 'Jump to the latest message' }).click();
   await panel.waitForFunction(() => { const el = document.querySelector('.overflow-y-auto'); return el.scrollHeight - el.clientHeight - el.scrollTop < 40; });
+  await panel.setViewportSize({ width: 440, height: 1000 });
   // Expanding has an opposite. Gmail's header row toggles a message, so the
   // fixture does too, and the panel must keep every email it already recovered
   // after the mailbox stops showing them.

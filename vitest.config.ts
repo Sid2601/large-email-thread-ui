@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  define: { __DEV_TOOLS__: true },
   test: {
     // Range boundaries in DOMParser documents must follow browser semantics.
     // happy-dom 20 pins Range to window.document and silently returns empty slices.

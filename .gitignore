@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+dist-dev/
 
 # Local-only Claude settings (machine-specific)
 .claude/
@@ -25,3 +26,6 @@ dist/
 # Generated local distribution archive
 releases/
 !TEST_COVERAGE.md
+
+# Synthetic package smoke output, including diagnostic capture files
+artifacts/packages-*/

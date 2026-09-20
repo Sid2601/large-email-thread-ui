@@ -176,7 +176,7 @@ export function startReader(adapter: ReaderAdapter) {
     // recovered stay in the panel whether or not the page still shows them.
     if (message.type === 'COLLAPSE_THREAD') { adapter.collapse?.(); }
     if (message.type === 'READER_STATS') { respond({ ...stats, pending: dirty.size }); }
-    if (message.type === 'CAPTURE_THREAD_SOURCE') { navigation(); respond(capture()); }
+    if (__DEV_TOOLS__ && message.type === 'CAPTURE_THREAD_SOURCE') { navigation(); respond(capture()); }
     if (message.type === 'READ_BLOB_IMAGE') {
       const url = safeImageSource(message.url ?? '');
       const included = url.startsWith(`blob:${location.origin}/`) && Array.from(document.querySelectorAll(adapter.bodySelector)).some(body =>
@@ -188,7 +188,7 @@ export function startReader(adapter: ReaderAdapter) {
     return false;
   });
   navigation();
-  return { stats, capture, disconnect: () => { observer.disconnect(); if (timer) clearTimeout(timer); } };
+  return { stats, capture: __DEV_TOOLS__ ? capture : undefined, disconnect: () => { observer.disconnect(); if (timer) clearTimeout(timer); } };
 }
 
 export function imageSources(body: Element): string[] {
